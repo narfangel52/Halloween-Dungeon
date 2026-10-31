@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.13]",message)
+    print("[Nerfangel V3.14]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.13 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.14 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -750,6 +750,7 @@ MW.selectionSection:Button({
     Callback=function() if MW.refreshAreaEnemies then MW.refreshAreaEnemies() end end,
 })
 MW.rotateEnemies=false
+MW.regionalStepWait=0.8
 MW.rotationBlocked=setmetatable({},{__mode="k"})
 MW.worldTab:Module({
     Title="Alternar monstros da região (XP)",
@@ -762,6 +763,11 @@ MW.worldTab:Module({
         MW.rotationOrigin=nil
         MW.rotationBlocked=setmetatable({},{__mode="k"})
     end,
+})
+MW.selectionSection:Slider({
+    Title="Pausa entre passos de teleporte (s)",
+    Min=0.4,Max=1.2,Default=0.8,Step=0.1,
+    Callback=function(value) MW.regionalStepWait=math.clamp(tonumber(value) or 0.8,0.4,1.2) end,
 })
 MW.worldEnemiesModule=MW.worldTab:Module({
     Title="Auto Farm Single Enemy",
@@ -1474,16 +1480,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.13 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.14 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.13 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.14 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.13 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.14 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1494,7 +1500,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.13 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.14 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -4195,6 +4201,26 @@ function MW.shortStep(npc,id)
     return false
 end
 
+-- Broad bounds can overlap empty space in meshes. Confirm with exact geometry.
+function MW.regionalLandingClear(point,overlap)
+    local size=Vector3.new(2,3,2)
+    local parts=workspace:GetPartBoundsInBox(CFrame.new(point),size,overlap)
+    local suspect=false
+    for _,part in ipairs(parts) do if part.CanCollide then suspect=true;break end end
+    if not suspect then return true end
+    local probe=Instance.new("Part")
+    probe.Name="NerfangelLandingProbe"
+    probe.Size=size;probe.CFrame=CFrame.new(point)
+    probe.Anchored=true;probe.Transparency=1
+    probe.CanCollide=false;probe.CanTouch=false;probe.CanQuery=false
+    probe.Parent=workspace
+    local ok,exact=pcall(function() return workspace:GetPartsInPart(probe,overlap) end)
+    probe:Destroy()
+    if not ok then return false end
+    for _,part in ipairs(exact) do if part.CanCollide then return false end end
+    return true
+end
+
 -- Travel to distant regional targets in bounded, floor-checked steps.
 function MW.regionalSteps(npc,id)
     local character=getCharacter()
@@ -4218,17 +4244,14 @@ function MW.regionalSteps(npc,id)
         local point
         -- Try shorter and lateral landing points instead of cancelling the target.
         for _,length in ipairs({20,12,6}) do
-            for _,offset in ipairs({0,0.6,-0.6}) do
+            for _,offset in ipairs({0,0.6,-0.6,1.2,-1.2}) do
                 local direction=(forward+side*offset).Unit
                 local probe=root.Position+direction*math.min(length,distance-25)
                 local ground=MW.groundAt(probe,npc)
                 if ground and math.abs(ground.Y-root.Position.Y)<=12 then
                     local candidate=Vector3.new(probe.X,ground.Y+3.2,probe.Z)
                     if horizontalDistance(candidate,pos)<distance-1 then
-                        local parts=workspace:GetPartBoundsInBox(CFrame.new(candidate),Vector3.new(2,3,2),overlap)
-                        local clear=true
-                        for _,part in ipairs(parts) do if part.CanCollide then clear=false;break end end
-                        if clear then point=candidate;break end
+                        if MW.regionalLandingClear(candidate,overlap) then point=candidate;break end
                     end
                 end
             end
@@ -4242,7 +4265,7 @@ function MW.regionalSteps(npc,id)
         hum:MoveTo(root.Position)
         character:PivotTo(CFrame.lookAt(point,Vector3.new(pos.X,point.Y,pos.Z)))
         steps=steps+1
-        local untilTime=os.clock()+0.8
+        local untilTime=os.clock()+(MW.regionalStepWait or 0.8)
         repeat
             task.wait(0.1)
             if not MW.worldFarmValid(id) or getCharacter()~=character then return false end
@@ -4266,7 +4289,7 @@ function MW.approachOnce(npc,id)
     local flat=horizontalDistance(root.Position,pos)
     if MW.lastApproachedNPC==npc then
         -- Never repeat teleports to the SAME living instance after rollback.
-        if flat<=7 then MW.shortStep(npc,id) end
+        if flat<=7 and not MW.rotateEnemies then MW.shortStep(npc,id) end
         return flat<=7
     end
     if flat>35 then
@@ -4306,7 +4329,7 @@ function MW.approachOnce(npc,id)
     end
     -- Prefer genuine movement, but do NOT block the first attack if it is
     -- already within reach or movement cannot be confirmed (V5.7.0 bug).
-    MW.shortStep(npc,id)
+    if not MW.rotateEnemies then MW.shortStep(npc,id) end
     return true
 end
 
@@ -4833,7 +4856,7 @@ function MW.fight(npc,id)
                 MW.worldKillsLabel:SetValue(tostring(MW.worldDefeated))
                 MW.addLootOrigin(enemyPosition(npc) or MW.lockedSpawn.pos)
                 debugPrint("[WORLD][SINGLE] KILL confirmed; collecting loot before respawn")
-                local untilTime=os.clock()+1.5
+                local untilTime=os.clock()+((MW.rotateEnemies and not MW.worldAutoLoot) and 0 or 1.5)
                 while MW.worldFarmValid(id) and os.clock()<untilTime do
                     if not MW.collectLoot(id) then task.wait(0.12) end
                 end
@@ -4859,11 +4882,11 @@ function MW.fight(npc,id)
             flat=horizontalDistance(root.Position,pos)
             vert=math.abs(root.Position.Y-pos.Y)
         end
-        if MW.rotateEnemies and (flat>7 or vert>10) then
+        if MW.rotateEnemies and (flat>16 or vert>16) then
             MW.targetRetryAt=os.clock()+3
             MW.lastApproachedNPC=nil
             hum:MoveTo(root.Position)
-            PRO.log("Farm XP: posição perdida; mantendo alvo para recuperar aproximação")
+            PRO.log("Farm XP: posição perdida; alvo="..npc.Name.." distancia="..math.floor(flat).." altura="..math.floor(vert).." HP="..math.floor(hp).." — mantendo alvo")
             return
         end
         -- Never teleport again while fighting this NPC. Recover knockback by walking.
@@ -5259,7 +5282,7 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.13 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.14 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5369,6 +5392,7 @@ do
         diagLabel:SetValue(ok and (result and "Estrutura compatível. Adaptador ainda exige teste no jogo." or tostring(reason)) or tostring(result))
     end})
 end
+
 
 
 
