@@ -1174,7 +1174,7 @@ accessGui.Enabled = false
 accessGui.Parent = playerGui
 local accessStatus = Instance.new("TextLabel")
 accessStatus.Parent = accessGui
-frame.Visible = false
+frame.Visible = true
 licenseButton.Text = "Access: no key required"
 
 -- ============================================
