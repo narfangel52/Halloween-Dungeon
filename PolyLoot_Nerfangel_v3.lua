@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.21]",message)
+    print("[Nerfangel V3.22]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.21 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.22 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1563,16 +1563,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.21 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.22 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.21 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.22 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.21 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.22 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1583,7 +1583,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.21 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.22 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -5629,7 +5629,7 @@ do
     local diag=tab:Section({Title="Diagnóstico do hub e do farm",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.21 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.22 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5729,7 +5729,7 @@ do
             local t=PRO.tower
             add("TORRE ativa="..tostring(t.active).." fase="..tostring(t.uiPhase).." andar="..tostring(t.floor).." wave="..tostring(t.wave).."/"..tostring(t.waves).." run="..tostring(t.run))
             if t.arena then add("TORRE arena="..t.arena:GetFullName()) end
-            add("TORRE aéreo="..tostring(t.airMode).." altura="..tostring(t.airHeight).." noclip="..tostring(t.airNoclip).." contínuo="..tostring(t.continuousAttack).." intervalo="..tostring(t.attackPeriod).." armas="..tostring(t.weaponInfo))
+            add("TORRE aéreo="..tostring(t.airMode).." altura="..tostring(t.airHeight).." noclip="..tostring(t.airNoclip).." contínuo="..tostring(t.continuousAttack).." intervalo="..tostring(t.attackPeriod).." aura="..tostring(t.auraMode).." raio="..tostring(t.auraRadius).." próximos="..tostring(t.auraNearby).." slotPumpkin="..tostring(t.weaponSlots and t.weaponSlots.sword).." slotHammer="..tostring(t.weaponSlots and t.weaponSlots.hammer).." armas="..tostring(t.weaponInfo))
         end
         for _,line in ipairs(PRO.errors) do add(line) end
         local text=table.concat(lines,"\n")
@@ -5767,6 +5767,8 @@ do
     PRO.tower=T
     T.autoWeapon=true;T.airMode=false;T.airHeight=10
     T.airNoclip=true;T.continuousAttack=false;T.attackPeriod=0.25
+    T.airTeleport=true;T.airTeleportPeriod=0.25;T.nextAirTeleport=0
+    T.auraMode=false;T.auraRadius=12;T.auraNearby=0
     function T.node(root,...)
         for _,name in ipairs({...}) do root=root and root:FindFirstChild(name) end
         return root
@@ -5924,48 +5926,108 @@ do
         if not T.visible(label) then return nil end
         return tonumber(T.text(label):gsub(",","."):match("[xX×]%s*(%d+%.?%d*)"))
     end
+    function T.weaponKind(tool)
+        if not tool then return nil end
+        local name=tostring(tool:GetAttribute("WeaponId") or tool.Name):lower():gsub("[^%w]","")
+        if name=="crabhammer" then return "hammer" end
+        if name=="halloweengreatsword" or name=="pumpkingreatsword" or name=="pumpkimgreatsword" then return "sword" end
+    end
+    function T.readWeaponSlots()
+        if os.clock()<(T.slotRetry or 0) then return T.weaponSlots or {} end
+        T.slotRetry=os.clock()+3
+        local ok,data=pcall(function()
+            if not T.weaponReplica then
+                local scripts=player:FindFirstChild("PlayerScripts")
+                local module=T.node(scripts,"Data_Client","PlayerData")
+                if not module then return nil end
+                local api=require(module)
+                T.weaponReplica=api:WaitFor(nil,2)
+            end
+            return T.weaponReplica and T.weaponReplica.Data
+        end)
+        local slots={}
+        if ok and type(data)=="table" and type(data.Hotbar)=="table" and type(data.Inventory)=="table" and type(data.Inventory.Weapons)=="table" then
+            for slot,serial in pairs(data.Hotbar) do
+                local index=tonumber(slot)
+                local item=data.Inventory.Weapons[serial]
+                if index and index%1==0 and index>=0 and index<=10 and type(item)=="table" and type(item.Id)=="string" then
+                    local kind=T.weaponKind({Name=item.Id,GetAttribute=function()return nil end})
+                    if kind then slots[kind]=index end
+                end
+            end
+        end
+        T.weaponSlots=slots
+        return slots
+    end
+    function T.equipKind(kind,id)
+        local char,hum=getCharacter(),getHumanoid()
+        if not T.valid(id) or not char or not hum or T.readUi()~="fight" then return nil,"Combate interrompido" end
+        local current=getWeapon()
+        if T.weaponKind(current)==kind then return current end
+        local pair=T.pairTools()
+        local tool=pair[kind]
+        if tool then
+            hum:EquipTool(tool)
+        else
+            local slots=T.readWeaponSlots()
+            if not T.valid(id) or getCharacter()~=char or T.readUi()~="fight" then return nil,"Combate interrompido" end
+            local slot=slots[kind]
+            if slot==nil then return nil,"Arma não encontrada na mochila nem nos dados dos atalhos" end
+            local names={[0]="Zero","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Zero"}
+            local key=Enum.KeyCode[names[slot]]
+            local vim,pressed
+            local ok,err=pcall(function()
+                if game:GetService("UserInputService"):GetFocusedTextBox() then error("Feche o chat/caixa de texto para trocar arma") end
+                vim=game:GetService("VirtualInputManager")
+                pressed=true;vim:SendKeyEvent(true,key,false,game)
+                task.wait(0.05)
+            end)
+            if pressed and vim then pcall(function()vim:SendKeyEvent(false,key,false,game)end) end
+            if not ok then return nil,tostring(err) end
+        end
+        local deadline=os.clock()+0.9
+        repeat
+            if not T.valid(id) or getCharacter()~=char or T.readUi()~="fight" then return nil,"Combate interrompido" end
+            local equipped=getWeapon()
+            if T.weaponKind(equipped)==kind then return equipped end
+            task.wait(0.05)
+        until os.clock()>=deadline
+        return nil,"Troca solicitada, mas arma equipada não confirmada"
+    end
+    function T.preferredKind(hammer,sword)
+        if type(hammer)~="number" or type(sword)~="number" then return "sword" end
+        if hammer>1 and hammer>sword then return "hammer" end
+        return "sword"
+    end
     function T.chooseWeapon(id)
         if not T.autoWeapon then return MW.equipWeapon() end
         if os.clock()<(T.weaponRetry or 0) then return getWeapon() end
-        local pair=T.pairTools()
-        if not pair.hammer or not pair.sword then
-            T.weaponInfo="Deixe Crab Hammer e Halloween/Pumpkin Greatsword nos atalhos/mochila"
-            return getWeapon()
-        end
-        local key=tostring(T.floor)
-        if T.weaponFloor~=key then
-            local char,hum=getCharacter(),getHumanoid()
-            local original=getWeapon()
+        local floor=T.floor
+        if T.weaponFloor~=floor then
             local scores={}
-            for _,tool in ipairs({pair.hammer,pair.sword}) do
-                if not T.valid(id) or getCharacter()~=char or T.readUi()~="fight" or T.floor~=tonumber(key) then return nil end
-                if tool.Parent~=char then hum:EquipTool(tool) end
-                task.wait(0.45)
-                if not T.valid(id) or getCharacter()~=char or T.readUi()~="fight" or T.floor~=tonumber(key) then return nil end
-                if tool.Parent==char and getWeapon()==tool then scores[tool]=T.heldMultiplier() end
+            local failure
+            for _,kind in ipairs({"hammer","sword"}) do
+                local tool,reason=T.equipKind(kind,id)
+                if not T.valid(id) or T.floor~=floor or T.readUi()~="fight" then return nil end
+                if tool then
+                    task.wait(0.45)
+                    if not T.valid(id) or T.floor~=floor or T.readUi()~="fight" then return nil end
+                    if T.weaponKind(getWeapon())==kind then scores[kind]=T.heldMultiplier() end
+                else failure=tostring(reason) end
             end
-            if scores[pair.hammer] and scores[pair.sword] then
-                local chosen=scores[pair.hammer]>scores[pair.sword] and pair.hammer
-                    or scores[pair.sword]>scores[pair.hammer] and pair.sword
-                    or (original==pair.hammer or original==pair.sword) and original or pair.sword
-                T.weaponChoice=chosen;T.weaponFloor=key
-                T.weaponInfo=string.format("Hammer x%g | Greatsword x%g → %s",scores[pair.hammer],scores[pair.sword],chosen.Name)
+            T.weaponChoiceKind=T.preferredKind(scores.hammer,scores.sword)
+            if scores.hammer and scores.sword then
+                T.weaponFloor=floor
+                T.weaponInfo=string.format("Hammer x%g | Pumpkin x%g → %s",scores.hammer,scores.sword,T.weaponChoiceKind=="sword" and "Pumpkin" or "Crab Hammer")
                 PRO.log("Torre armas: "..T.weaponInfo)
             else
-                T.weaponInfo="Multiplicador não confirmado; mantendo arma atual"
                 T.weaponRetry=os.clock()+5
-                if original and original.Parent and T.valid(id) and getCharacter()==char then hum:EquipTool(original) end
-                return getWeapon()
+                T.weaponInfo="Comparação incompleta; preferência Pumpkin. "..tostring(failure or "Multiplicador não confirmado")
             end
         end
-        local choice=T.weaponChoice
-        local char,hum=getCharacter(),getHumanoid()
-        if choice and choice.Parent and char and hum then
-            if choice.Parent~=char then hum:EquipTool(choice) end
-            return choice.Parent==char and choice or nil
-        end
-        T.weaponFloor=nil
-        return getWeapon()
+        local tool,reason=T.equipKind(T.weaponChoiceKind or "sword",id)
+        if not tool then T.weaponInfo="Preferência Pumpkin/troca pendente: "..tostring(reason);T.weaponRetry=os.clock()+5 end
+        return tool or getWeapon()
     end
     function T.releaseNoclip()
         local state=T.noclipState
@@ -6005,6 +6067,24 @@ do
                 if part.Parent and part.CanCollide then part.CanCollide=false end
             end
         end))
+    end
+    function T.auraEnemy(origin)
+        local folder=T.node(workspace,"Animal_Live","Aggressors")
+        local best,distance
+        T.auraNearby=0
+        if not folder then return nil end
+        for _,npc in ipairs(folder:GetChildren()) do
+            local hp=npc:GetAttribute("Health")
+            if npc:IsA("Model") and type(hp)=="number" and hp>0 then
+                local pos=enemyPosition(npc)
+                local d=pos and (origin-pos).Magnitude
+                if d and d<=T.auraRadius and T.inArena(pos) then
+                    T.auraNearby+=1
+                    if not distance or d<distance then best,distance=npc,d end
+                end
+            end
+        end
+        return best
     end
     function T.attackInterval(tool)
         local interval=T.continuousAttack and T.attackPeriod or CFG.ATTACK_INTERVAL
@@ -6059,6 +6139,27 @@ do
         local delta=Vector3.new(pos.X-root.Position.X,0,pos.Z-root.Position.Z)
         local forward=delta.Magnitude>0.1 and delta.Unit or Vector3.new(1,0,0)
         T.airPosition.Position=point
+        if T.airTeleport then
+            local errorDistance=(root.Position-point).Magnitude
+            if errorDistance>2 then
+                if os.clock()<T.nextAirTeleport then return false end
+                T.nextAirTeleport=os.clock()+T.airTeleportPeriod
+                T.airPosition.MaxVelocity=0
+                char:PivotTo(CFrame.lookAt(point,pos,forward))
+                local floor=T.floor
+                task.wait(T.airTeleportPeriod)
+                root=getRoot();pos=enemyPosition(npc)
+                if not T.valid(id) or getCharacter()~=char or T.floor~=floor or T.readUi()~="fight" or not root or not pos then return false end
+                point=pos+Vector3.new(0,T.airHeight,0)
+                T.airPosition.Position=point
+                if (root.Position-point).Magnitude>4 then
+                    T.nextAirTeleport=os.clock()+0.75
+                    T.status("Teleporte aéreo não confirmado — aguardando nova tentativa")
+                    return false
+                end
+            end
+            T.airPosition.MaxVelocity=0
+        else T.airPosition.MaxVelocity=40 end
         local aim=pos-root.Position
         if aim.Magnitude<0.1 then aim=Vector3.new(0,-1,0) end
         local up=math.abs(aim.Unit.Y)>0.95 and forward or Vector3.new(0,1,0)
@@ -6247,10 +6348,14 @@ do
             root=getRoot();pos=enemyPosition(npc)
             if not root or not pos then return end
             distance=horizontalDistance(root.Position,pos);height=math.abs(root.Position.Y-pos.Y)
-            if distance<=5.5 and height<=(T.airMode and T.airHeight+2 or 8) and tool.Enabled and os.clock()>=T.nextAttack
-                and T.valid(id) and T.readUi()=="fight" and npc.Parent and npc:GetAttribute("Health")>0 then
-                tool:Activate();T.nextAttack=os.clock()+T.attackInterval(tool)
-                T.status("Combatendo "..tostring(npc:GetAttribute("Animal") or npc.Name))
+            if tool.Enabled and os.clock()>=T.nextAttack and T.valid(id) and T.readUi()=="fight" then
+                local attackNpc=npc
+                if T.auraMode then attackNpc=T.auraEnemy(root.Position) end
+                local inRange=T.auraMode and attackNpc~=nil or not T.auraMode and distance<=5.5 and height<=(T.airMode and T.airHeight+2 or 8)
+                if inRange and attackNpc and attackNpc.Parent and (attackNpc:GetAttribute("Health") or 0)>0 then
+                    tool:Activate();T.nextAttack=os.clock()+T.attackInterval(tool)
+                    T.status((T.auraMode and "Aura próxima: "..T.auraNearby.." | " or "Combatendo ")..tostring(attackNpc:GetAttribute("Animal") or attackNpc.Name))
+                end
             end
         end
     end
@@ -6274,7 +6379,7 @@ do
         if T.connection then T.connection:Disconnect() end
         T.token+=1;T.active=true;T.sent={};T.run=nil;T.floor=0;T.wave=0;T.waves=0;T.winKey=nil;T.lootKey=nil
         T.releaseAir()
-        T.weaponFloor=nil;T.weaponRetry=0;T.weaponChoice=nil
+        T.weaponFloor=nil;T.weaponRetry=0;T.weaponChoiceKind=nil;T.nextAirTeleport=0
         T.nextMove=0;T.nextAttack=0;T.target=nil;T.uiPhase=nil;T.missingSince=nil
         T.connection=push.OnClientEvent:Connect(T.onPush)
         local id=T.token
@@ -6309,15 +6414,24 @@ do
     combat:Toggle({Title="Alternar Crab Hammer / Greatsword pelo bônus",Default=true,Callback=function(v)
         T.autoWeapon=v==true;T.weaponFloor=nil;T.weaponRetry=0
     end})
-    combat:Paragraph({Title="Comparação no início do combate",Content="Equipa brevemente as duas armas e lê o multiplicador real do HUD. Escolhe o maior bônus; em empate preserva a arma anterior. Isso não compara dano base nem velocidade de ataque."})
+    combat:Paragraph({Title="Comparação no início do combate",Content="Equipa brevemente as duas armas e lê o multiplicador real do HUD. Escolhe Crab Hammer se tiver bônus superior a x1 e maior que a Pumpkin; sem bônus ou em empate prefere Pumpkin. Isso não compara dano base nem velocidade de ataque."})
     combat:Toggle({Title="Combate aéreo — mirar no monstro",Default=false,Callback=function(v)
         T.airMode=v==true
         if not T.airMode then T.releaseAir() end
     end})
     combat:Slider({Title="Altura acima do monstro",Min=4,Max=12,Step=1,Default=10,Callback=function(v)T.airHeight=math.clamp(tonumber(v) or 10,4,12)end})
+    combat:Toggle({Title="Teleportar até o monstro no modo aéreo",Default=true,Callback=function(v)
+        T.airTeleport=v==true;T.nextAirTeleport=0
+    end})
     combat:Toggle({Title="Atravessar obstáculos durante o voo",Default=true,Callback=function(v)
         T.airNoclip=v==true
         if not T.airNoclip then T.releaseNoclip() end
+    end})
+    combat:Toggle({Title="Aura de proximidade própria — experimental",Default=false,Callback=function(v)
+        T.auraMode=v==true;T.nextAttack=0
+    end})
+    combat:Slider({Title="Raio da aura (studs, distância 3D)",Min=4,Max=18,Step=1,Default=12,Callback=function(v)
+        T.auraRadius=math.clamp(tonumber(v) or 12,4,18)
     end})
     combat:Toggle({Title="Ataque contínuo próximo — experimental",Default=false,Callback=function(v)
         T.continuousAttack=v==true;T.nextAttack=0
@@ -6325,7 +6439,7 @@ do
     combat:Slider({Title="Intervalo do ataque contínuo (segundos)",Min=0.15,Max=0.65,Step=0.05,Default=0.25,Callback=function(v)
         T.attackPeriod=math.clamp(tonumber(v) or 0.25,0.15,0.65)
     end})
-    combat:Paragraph({Title="Ataque automático",Content="O modo contínuo solicita ataques da arma em intervalos menores, respeitando Enabled e cooldowns numéricos expostos. O jogo determina quais inimigos são atingidos; isso não confirma uma kill aura de múltiplos alvos. Colisões são restauradas ao parar o voo."})
+    combat:Paragraph({Title="Ataque automático",Content="Aura detecta inimigos vivos da arena no raio 3D e aciona a arma. O jogo determina alcance e dano de cada golpe; não garante atingir todos no raio. Ataque contínuo ajusta a frequência. Colisões são restauradas ao parar o voo."})
     local state=tab:Section({Title="3 • Acompanhamento",Icon="activity"})
     T.statusLabel=state:Label({Text="Estado",Value="Entre manualmente na torre e ative"})
     T.progressLabel=state:Label({Text="Progresso",Value="Andar — | wave —"})
