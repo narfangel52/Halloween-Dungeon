@@ -175,6 +175,7 @@ end
 
 local function getEnemies()
     local live = workspace:FindFirstChild("Animal_Live")
+    if PRO.dungeonId=="dark" then return live end
     return live and live:FindFirstChild("Aggressors")
 end
 
@@ -191,58 +192,83 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3]",message)
+    print("[Nerfangel V3.1]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
 end
 function PRO.darkCandidates()
     local result={}
-    -- Bound scanning to direct world children: no repeated full-world traversal.
-    for _,obj in ipairs(workspace:GetChildren()) do
-        local name=obj.Name:lower():gsub("[^%w]", "")
-        if (obj:IsA("Model") or obj:IsA("Folder")) and name:find("dungeon",1,true)
-            and not name:find("halloween",1,true) then
-            local start=obj:FindFirstChild("01_StartingRoom",true)
-            local walls=start and start:FindFirstChild("InvisWalls")
-            local door=walls and walls:FindFirstChild("Door")
-            if door and door:IsA("BasePart") then table.insert(result,obj) end
+    local runs=workspace:FindFirstChild("DungeonRuns")
+    if not runs then return result end
+    for _,run in ipairs(runs:GetChildren()) do
+        if run:IsA("Model") or run:IsA("Folder") then
+            for _,room in ipairs(run:GetChildren()) do
+                if PRO.roomNumber(room.Name) then table.insert(result,run);break end
+            end
         end
     end
     return result
 end
+function PRO.floorRun(root,containers)
+    if not root or #containers==0 then return nil,nil end
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Include
+    params.FilterDescendantsInstances=containers
+    local hit=workspace:Raycast(root.Position+Vector3.new(0,4,0),Vector3.new(0,-35,0),params)
+    if not hit then return nil,nil end
+    local node=hit.Instance
+    local roomIndex=nil
+    while node and node~=workspace do
+        roomIndex=PRO.roomNumber(node.Name) or roomIndex
+        for _,run in ipairs(containers) do if node==run then return run,roomIndex end end
+        node=node.Parent
+    end
+    return nil,nil
+end
+function PRO.refreshDarkRoom()
+    if PRO.dungeonId~="dark" or not PRO.darkChain or not PRO.darkChain.Parent then return end
+    local now=os.clock()
+    if now<(PRO.nextRoomProbe or 0) then return end
+    PRO.nextRoomProbe=now+0.4
+    local character=player.Character
+    local root=character and character:FindFirstChild("HumanoidRootPart")
+    local _,index=PRO.floorRun(root,{PRO.darkChain})
+    if index and index>=1 and index<=PRO.roomCount and currentRoom~=index then
+        currentRoom=index; currentWave=0; roomCleared=false
+        PRO.lastProgressAt=now
+        clearPendingDoor()
+        PRO.log("Sala Dark pelo piso: "..index)
+    end
+end
 function PRO.resolveDark()
     local candidates=PRO.darkCandidates()
-    if #candidates~=1 then
-        return false,"Dark: "..#candidates.." estruturas compatíveis. Entre manualmente na dungeon e gere o diagnóstico."
-    end
-    local chain=candidates[1]
-    local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    local inside=false
-    if root then
-        for _,part in ipairs(chain:GetDescendants()) do
-            if part:IsA("BasePart") and (part.Position-root.Position).Magnitude<80 then inside=true;break end
+    local character=player.Character
+    local root=character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return false,"Aguardando personagem." end
+    local chain,index=PRO.floorRun(root,candidates)
+    if not chain then
+        -- If airborne, accept only ONE nearby run; never select a remote party.
+        local near={}
+        for _,run in ipairs(candidates) do
+            for _,part in ipairs(run:GetDescendants()) do
+                if part:IsA("BasePart") and (part.Position-root.Position).Magnitude<60 then
+                    table.insert(near,run);break
+                end
+            end
         end
+        if #near==1 then chain=near[1] end
     end
-    if not inside then return false,"Aproxime-se da entrada interna da Dark Dungeon antes de iniciar." end
-    local enemies=workspace:FindFirstChild("Animal_Live")
-    enemies=enemies and enemies:FindFirstChild("Aggressors")
-    if not enemies then return false,"Pasta de inimigos incompatível; gere o diagnóstico dentro da Dark Dungeon." end
-    PRO.darkChain=chain
-    PRO.darkEngine=nil
-    local engines={}
-    for _,engine in ipairs(game:GetService("ReplicatedStorage"):GetChildren()) do
-        local name=engine.Name:lower()
-        if name:find("dungeon",1,true) and not name:find("halloween",1,true) then
-            local remotes=engine:FindFirstChild("Remotes")
-            local scene=remotes and remotes:FindFirstChild("Scene")
-            if scene and scene:IsA("RemoteEvent") then table.insert(engines,engine) end
-        end
-    end
-    if #engines==1 then PRO.darkEngine=engines[1] end
-    PRO.log("Perfil Dark experimental: "..chain:GetFullName())
+    if not chain then return false,"Dark: nenhum mapa próximo e inequívoco em DungeonRuns. Entre na sala e gere diagnóstico." end
+    local engine=game:GetService("ReplicatedStorage"):FindFirstChild("Dungeon_Engine")
+    if not engine then return false,"Dungeon_Engine não carregado; aguarde e gere diagnóstico." end
+    PRO.darkChain=chain; PRO.darkEngine=engine
+    PRO.nextRoomProbe=0
+    PRO.refreshDarkRoom()
+    PRO.log("Dark vinculada: "..chain:GetFullName().." | sala="..tostring(index or currentRoom))
     return true
 end
+
 local function getDungeon()
     if PRO.dungeonId=="dark" then
         return PRO.darkChain and PRO.darkChain.Parent and PRO.darkChain or nil
@@ -294,6 +320,7 @@ end
 local gui -- Forward declaration shared by session validation and UI initialization.
 
 local function validSession(id)
+    if running and PRO.dungeonId=="dark" then PRO.refreshDarkRoom() end
     return running and sessionId == id and gui ~= nil and gui.Parent ~= nil
 end
 
@@ -533,7 +560,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.1 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1431,16 +1458,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.1 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.1 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.1 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1451,7 +1478,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.1 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -1723,6 +1750,19 @@ local function installSceneReplayListener()
 
     local ok, conn = pcall(function()
         return scene.OnClientEvent:Connect(function(action, data)
+            if PRO.dungeonId=="dark" then
+                local info=""
+                if type(data)=="table" then
+                    local fields={}
+                    for key,value in pairs(data) do
+                        if type(value)=="string" or type(value)=="number" or type(value)=="boolean" then
+                            if #fields<10 then table.insert(fields,tostring(key).."="..tostring(value):sub(1,90)) end
+                        end
+                    end
+                    info=table.concat(fields,",")
+                end
+                PRO.log("Scene Dark: "..tostring(action).." "..info)
+            end
             -- Diagnostic only: compare server gate timing with the delayed
             -- room popup. Gate signals alone do NOT prove room entry.
             if CFG.DEBUG_MODE and running and not waitingForRestart
@@ -1798,6 +1838,13 @@ PRO.rebindScene()
 local function processNotification(text)
     if type(text) ~= "string" then
         return
+    end
+    if PRO.dungeonId=="dark" then
+        local room,total=text:match("Room%s+(%d+)%s*/%s*(%d+)")
+        if tonumber(total)==PRO.roomCount and tonumber(room) and tonumber(room)~=currentRoom then
+            currentRoom=tonumber(room); currentWave=0; roomCleared=false
+            PRO.lastProgressAt=os.clock(); clearPendingDoor()
+        end
     end
     local room, _, waves = text:match(
         "Room%s+(%d+)%s*/%s*(%d+)%s*[^%d]+(%d+)%s+waves"
@@ -1953,7 +2000,7 @@ local function getNextEnemy()
     local nearest = nil
     local bestDistance = CFG.TARGET_SEARCH_RADIUS
     local now = os.clock()
-    for _, enemy in ipairs(folder:GetChildren()) do
+    for _, enemy in ipairs(PRO.dungeonId=="dark" and folder:GetDescendants() or folder:GetChildren()) do
         if enemy:IsA("Model")
             and enemyAlive(enemy)
             and (skippedEnemies[enemy] or 0) <= now then
@@ -2277,12 +2324,14 @@ local function getOpenDoor()
             and door.Name == "Door"
             and door.CanCollide == false
             and not usedDoors[door] then
-            local roomFolder = door.Parent
-                and door.Parent.Parent
-            local index = roomFolder
-                and tonumber(
-                    roomFolder.Name:match("^(%d+)_")
-                )
+            local roomFolder = door.Parent and door.Parent.Parent
+            if PRO.dungeonId=="dark" then
+                roomFolder=door.Parent
+                while roomFolder and roomFolder~=dungeonFolder and not PRO.roomNumber(roomFolder.Name) do
+                    roomFolder=roomFolder.Parent
+                end
+            end
+            local index = roomFolder and PRO.roomNumber(roomFolder.Name)
             if index
                 and index >= minIndex
                 and index <= maxIndex then
@@ -2324,6 +2373,10 @@ local function enterFirstRoom(id)
         "01_StartingRoom",
         true
     )
+    if PRO.dungeonId=="dark" then
+        PRO.refreshDarkRoom()
+        return currentRoom>0 -- manual entry is already inside an indexed room
+    end
     if not startRoom then
         debugPrint("StartingRoom nicht gefunden")
         return false
@@ -3291,7 +3344,10 @@ local function startSpeedrun(id)
             task.wait(0.5)
             continue
         end
-        local signature=tostring(currentRoom)..":"..tostring(currentWave)..":"..tostring(defeatedCount)..":"..tostring(attackCount)
+        if PRO.dungeonId=="dark" then
+            PRO.refreshDarkRoom()
+            roomLabel.Text="Room: "..currentRoom.." / "..PRO.roomCount
+        end
         -- Only confirmed room/wave/kill changes reset the stall clock, not attacks.
         local progress=tostring(currentRoom)..":"..tostring(currentWave)..":"..tostring(defeatedCount)
         if progress~=PRO.progressSignature then PRO.progressSignature=progress; PRO.lastProgressAt=os.clock() end
@@ -4711,10 +4767,47 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.1 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
+        local runs=workspace:FindFirstChild("DungeonRuns")
+        if runs then
+            for runIndex,run in ipairs(runs:GetChildren()) do
+                if runIndex>8 then break end
+                add("RUN "..run:GetFullName())
+                for key,value in pairs(run:GetAttributes()) do
+                    if type(value)~="table" then add("ATRIBUTO RUN "..tostring(key).."="..tostring(value)) end
+                end
+                for _,room in ipairs(run:GetChildren()) do
+                    if PRO.roomNumber(room.Name) then add("SALA DIRETA "..room:GetFullName()) end
+                end
+                local count=0
+                for _,obj in ipairs(run:GetDescendants()) do
+                    local lower=obj.Name:lower()
+                    if (obj:IsA("BasePart") and (lower:find("door",1,true) or lower:find("gate",1,true)))
+                        or obj:IsA("ProximityPrompt") then
+                        add("PASSAGEM "..obj:GetFullName().." ["..obj.ClassName.."]"..
+                            (obj:IsA("BasePart") and (" CanCollide="..tostring(obj.CanCollide)) or ""))
+                        count=count+1; if count>=45 then break end
+                    end
+                end
+            end
+        end
+        local live=workspace:FindFirstChild("Animal_Live")
+        if live then
+            for _,child in ipairs(live:GetChildren()) do add("PASTA NPC "..child:GetFullName().." ["..child.ClassName.."]") end
+            local count=0
+            for _,npc in ipairs(live:GetDescendants()) do
+                if npc:IsA("Model") and npc:GetAttribute("Health")~=nil then
+                    add("NPC REAL "..npc:GetFullName().." Health="..tostring(npc:GetAttribute("Health")))
+                    for key,value in pairs(npc:GetAttributes()) do
+                        if type(value)=="string" or type(value)=="number" then add("ATRIBUTO NPC "..key.."="..tostring(value):sub(1,90)) end
+                    end
+                    count=count+1;if count>=10 then break end
+                end
+            end
+        end
         for _,parent in ipairs({workspace,game:GetService("ReplicatedStorage"),playerGui}) do
             for _,obj in ipairs(parent:GetChildren()) do
                 local lower=obj.Name:lower()
