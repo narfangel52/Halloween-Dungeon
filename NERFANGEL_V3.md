@@ -1,4 +1,4 @@
-# Nerfangel Hub V3 — BETA
+# Nerfangel Hub V3.1 — BETA
 
 Preserves the existing v2 files. V3 is a separate experimental release, not a verified Dark Dungeon automation.
 
@@ -15,7 +15,9 @@ Preserves the existing v2 files. V3 is a separate experimental release, not a ve
 4. If incompatible, use Gerar e copiar diagnóstico and provide the report for adaptation.
 5. If compatible, test Speedrun with automatic replay OFF first. Structural compatibility does not establish gameplay correctness.
 
-The adapter requires one non-Halloween top-level dungeon model/folder, a 01_StartingRoom/InvisWalls/Door structure, nearby physical map parts and Animal_Live/Aggressors. These are compatibility checks derived from the existing Halloween code, NOT independently verified Dark identifiers. The adapter refuses to start when checks fail. Dark result UI, notifications, Scene semantics, room transitions, combat and replay still require live validation. Manual entry is required. It does not claim to implement the Dark entrance or bypass its level requirement.
+The user's in-game report established Workspace.DungeonRuns.D1_6620b3.01_Room3 and ReplicatedStorage.Dungeon_Engine.Remotes.Scene. V3.1 detects numbered rooms under DungeonRuns, chooses the run under the player's floor raycast (or exactly one nearby run), and binds Dungeon_Engine. It no longer requires Halloween's 01_StartingRoom or an Aggressors subfolder. Dark NPC searches use descendants of Animal_Live and restrict targets with a floor raycast into the bound run. Room inference uses the numbered ancestor of the floor beneath the player.
+
+Door names and orientation, NPC Health attributes, loot folder behavior, and replay semantics remain unverified live. The diagnostic now prioritizes direct rooms, door/gate parts, prompts, NPC hierarchy and attributes. No arbitrary Request payload was invented or emitted. Entry remains manual. Both structural tests with observed names and isolated party-selection tests passed; no claim of a successful live clear.
 
 ## Research, 2026-10-31
 Reviewed GitHub code search and repository metadata, ScriptBlox, Delta Scripts, and public game/community references. No well-rated, reviewable open-source Dark implementation was found in the searches performed. This is not an exhaustive statement about all repositories.
