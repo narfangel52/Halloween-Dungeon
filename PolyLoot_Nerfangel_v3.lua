@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.6]",message)
+    print("[Nerfangel V3.7]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.6 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.7 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1460,16 +1460,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.6 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.7 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.6 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.7 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.6 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.7 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1480,7 +1480,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.6 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.7 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -1816,12 +1816,19 @@ local function installSceneReplayListener()
                 end
             elseif action == "arrive" and sceneReplay.exit then
                 local dungeonName = tostring(data.name or "")
-                if dungeonName == "" or dungeonName == "Halloween Dungeon 2026" then
+                if dungeonName == "" or dungeonName == (PRO.dungeonId=="dark" and "Dark Dungeon" or "Halloween Dungeon 2026") then
                     sceneReplay.arrive = true
                     sceneReplay.arriveAt = os.clock()
                     debugPrint("[SCENE] arrive: new dungeon loaded")
                     statusLabel.Text = "New dungeon loaded - waiting for gate..."
                 end
+            elseif PRO.dungeonId=="dark" and sceneReplay.arrive
+                and ((action=="room" and tonumber(data.index or data.room)==1)
+                    or (action=="wave" and tonumber(data.room)==1)) then
+                -- Dark reports room/wave instead of Halloween's gate(open=true).
+                sceneReplay.gate=true
+                PRO.log("Reinício Dark confirmado: primeira sala ativa")
+                statusLabel.Text="Dungeon pronta — retomando automaticamente"
             elseif action == "gate" and sceneReplay.arrive then
                 if tonumber(data.room) == 1 and data.open == true then
                     sceneReplay.gate = true
@@ -3659,7 +3666,7 @@ local function startSpeedrun(id)
         if PRO.dungeonId=="dark" and not getDungeon() and not isDungeonComplete() then
             onSpeedrunToggle(false); statusLabel.Text="Mapa Dark desapareceu: gere novo diagnóstico antes de reiniciar."; break
         end
-        if isDungeonComplete() then
+        if isDungeonComplete() or waitingForRestart then
             if not waitingForRestart then
                 if PRO.runStartedAt then
                     PRO.lastSeconds=os.clock()-PRO.runStartedAt
@@ -3786,13 +3793,24 @@ local function startSpeedrun(id)
             -- New dungeon confirmed by the server: exit -> arrive -> gate.
             -- Room 1 may already be reported by a notification.
             local roomAlreadyDetected = restartRoomObserved and currentRoom == 1
+            local darkState
             if PRO.dungeonId=="dark" then
                 local ok,reason=PRO.resolveDark()
                 if not ok then onSpeedrunToggle(false); statusLabel.Text=reason; break end
-                PRO.rebindScene()
+                -- The listener already observed room/wave; keep it and its state.
+                darkState={room=PRO.sceneRoom or currentRoom,wave=currentWave,
+                    waves=totalWaves,cleared=roomCleared,unlocked=PRO.darkUnlocked}
+                roomAlreadyDetected=true
             end
             PRO.lastProgressAt=os.clock()
             resetDungeonRun(roomAlreadyDetected)
+            if darkState then
+                currentRoom=darkState.room;PRO.sceneRoom=darkState.room
+                currentWave=darkState.wave;totalWaves=darkState.waves
+                roomCleared=darkState.cleared;PRO.darkUnlocked=darkState.unlocked
+                PRO.preLootPosition=nil;PRO.nextDoorAttempt=nil
+                PRO.log("Reinício Dark: automação retomada na sala "..tostring(currentRoom))
+            end
             setButton(true)
             debugPrint("[SCENE] New dungeon confirmed; resuming")
             continue
@@ -5068,7 +5086,7 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.6 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.7 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
