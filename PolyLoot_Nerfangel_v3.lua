@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.11]",message)
+    print("[Nerfangel V3.12]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.11 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.12 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -753,7 +753,7 @@ MW.rotateEnemies=false
 MW.rotationBlocked=setmetatable({},{__mode="k"})
 MW.worldTab:Module({
     Title="Alternar monstros da região (XP)",
-    Description="Troca para outro vivo da espécie selecionada a até 35 studs, usando a aproximação original do alvo único. Sem alvo próximo, aguarda.",
+    Description="Seleciona outro vivo nos pontos mapeados até 600 studs do início. Aproximação por passos de até 20 studs, com piso e chegada verificados.",
     Icon="repeat",Default=false,Keybind=false,
     Callback=function(enabled)
         if MW.enemyFarmEnabled and MW.setWorldFarmMode then MW.setWorldFarmMode("enemy",false) end
@@ -1474,16 +1474,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.11 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.12 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.11 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.12 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.11 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.12 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1494,7 +1494,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.11 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.12 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -4067,6 +4067,7 @@ function MW.rotationNpc()
                 marker=tostring(part:GetAttribute("_MarkerId") or ""),animal=MW.selectedEnemyName})
         end
     end
+    MW.rotationMappedSlots=#slots
     local best,bestSlot,bestDistance
     for _,npc in ipairs(folder:GetChildren()) do
         local hp=npc:IsA("Model") and npc:GetAttribute("Health")
@@ -4085,7 +4086,7 @@ function MW.rotationNpc()
                 if matches then
                     if npc==MW.activeNPC then return npc end
                     local distance=horizontalDistance(root.Position,pos)
-                    if distance<=35 and (not bestDistance or distance<bestDistance) then
+                    if not bestDistance or distance<bestDistance then
                         best,bestSlot,bestDistance=npc,slot,distance
                     end
                     break
@@ -4188,7 +4189,57 @@ function MW.shortStep(npc,id)
     return false
 end
 
+-- Travel to distant regional targets in bounded, floor-checked steps.
+function MW.regionalSteps(npc,id)
+    local character=getCharacter()
+    local deadline=os.clock()+35
+    local steps=0
+    while MW.worldFarmValid(id) and MW.rotateEnemies and MW.activeNPC==npc
+        and getCharacter()==character and os.clock()<deadline and steps<30 do
+        local root,hum=getRoot(),getHumanoid()
+        local pos=enemyPosition(npc)
+        local hp=npc.Parent and npc:GetAttribute("Health")
+        if not root or not hum or hum.Health<=0 or not pos or type(hp)~="number" or hp<=0 then return false end
+        local distance=horizontalDistance(root.Position,pos)
+        if distance<=30 then return true end
+        local delta=Vector3.new(pos.X-root.Position.X,0,pos.Z-root.Position.Z)
+        local probe=root.Position+delta.Unit*math.min(20,distance-25)
+        local ground=MW.groundAt(probe,npc)
+        if not ground or math.abs(ground.Y-root.Position.Y)>12 then
+            PRO.log("Farm XP: trecho sem piso acessível; aproximação cancelada")
+            return false
+        end
+        local point=Vector3.new(probe.X,ground.Y+3.2,probe.Z)
+        local overlap=OverlapParams.new()
+        overlap.FilterType=Enum.RaycastFilterType.Exclude
+        overlap.FilterDescendantsInstances={character,npc}
+        overlap.RespectCanCollide=true
+        local parts=workspace:GetPartBoundsInBox(CFrame.new(point),Vector3.new(2,4,2),overlap)
+        for _,part in ipairs(parts) do
+            if part.CanCollide then PRO.log("Farm XP: ponto intermediário ocupado; aproximação cancelada");return false end
+        end
+        if not MW.worldFarmValid(id) or getCharacter()~=character then return false end
+        hum:MoveTo(root.Position)
+        character:PivotTo(CFrame.lookAt(point,Vector3.new(pos.X,point.Y,pos.Z)))
+        steps=steps+1
+        local untilTime=os.clock()+0.8
+        repeat
+            task.wait(0.1)
+            if not MW.worldFarmValid(id) or getCharacter()~=character then return false end
+            root=getRoot()
+            if not root or horizontalDistance(root.Position,point)>6 or math.abs(root.Position.Y-point.Y)>8 then
+                PRO.log("Farm XP: passo "..steps.." revertido; viagem interrompida")
+                return false
+            end
+        until os.clock()>=untilTime
+    end
+    return false
+end
+
 function MW.approachOnce(npc,id)
+    if MW.rotateEnemies then
+        if not MW.regionalSteps(npc,id) then return false end
+    end
     local char,root,hum=getCharacter(),getRoot(),getHumanoid()
     local pos=enemyPosition(npc)
     if not char or not root or not hum or not pos then return false end
@@ -4889,7 +4940,7 @@ function MW.runFarm(id)
                     task.wait(0.10)
                 end
             else
-                MW.worldStatusLabel:SetValue(MW.rotateEnemies and "Sem alvo disponível até 35 studs — aproxime-se de outro grupo ou aguarde" or "Waiting for respawn at locked spawn")
+                MW.worldStatusLabel:SetValue(MW.rotateEnemies and "Sem alvo disponível nos pontos mapeados — aguardando" or "Waiting for respawn at locked spawn")
                 task.wait(0.25)
             end
         else
@@ -5184,7 +5235,7 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.11 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.12 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5257,6 +5308,23 @@ do
                 add("NPC "..npc.Name.." Health="..tostring(npc:GetAttribute("Health")).." Animal="..tostring(npc:GetAttribute("Animal")))
             end
         end
+        add("FARM mundo="..tostring(MW.worldFarmRunning).." inimigos="..tostring(MW.enemyFarmEnabled).." rotacao="..tostring(MW.rotateEnemies))
+        add("FARM area="..tostring(MW.selectedArea).." especie="..tostring(MW.selectedEnemyName).." pontos_mapeados="..tostring(MW.rotationMappedSlots or 0))
+        local farmRoot=getRoot()
+        local live=workspace:FindFirstChild("Animal_Live")
+        local aggressors=live and live:FindFirstChild("Aggressors")
+        if farmRoot and aggressors then
+            local count=0
+            for _,npc in ipairs(aggressors:GetChildren()) do
+                local hp=npc:GetAttribute("Health")
+                local pos=npc:IsA("Model") and enemyPosition(npc)
+                if pos and npc:GetAttribute("Animal")==MW.selectedEnemyName and type(hp)=="number" and hp>0 then
+                    count=count+1
+                    if count<=30 then add("ALVO XP "..npc.Name.." distancia="..math.floor(horizontalDistance(farmRoot.Position,pos)).." HP="..math.floor(hp).." bloqueado="..tostring((MW.rotationBlocked[npc] or 0)>os.clock())) end
+                end
+            end
+            add("ALVOS XP vivos carregados="..count)
+        end
         for _,line in ipairs(PRO.errors) do add(line) end
         local text=table.concat(lines,"\n")
         print(text)
@@ -5276,6 +5344,7 @@ do
         diagLabel:SetValue(ok and (result and "Estrutura compatível. Adaptador ainda exige teste no jogo." or tostring(reason)) or tostring(result))
     end})
 end
+
 
 
 
