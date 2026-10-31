@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.5]",message)
+    print("[Nerfangel V3.6]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.5 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.6 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1460,16 +1460,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.5 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.6 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.5 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.6 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.5 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.6 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1480,7 +1480,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.5 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.6 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -2515,6 +2515,54 @@ function PRO.doorApproach(center,normal,size,position)
     return center-normal*(thickness/2+5),center+normal*(thickness/2+8),normal
 end
 
+-- Validate fallback walking against floor gaps and collidable obstacles.
+function PRO.safeDarkSegment(from,to,roomIndex)
+    if (to-from).Magnitude>300 then return false end
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances={getCharacter()}
+    params.RespectCanCollide=true
+    params.IgnoreWater=true
+    local steps=math.max(1,math.ceil((to-from).Magnitude/2))
+    local previous=from
+    for i=1,steps do
+        local point=dungeonSafeDestination(from:Lerp(to,i/steps))
+        if not point or math.abs(point.Y-previous.Y)>2 then return false end
+        local _,index=PRO.floorRun({Position=point},{getDungeon()})
+        if index~=roomIndex then return false end
+        local delta=point-previous
+        if delta.Magnitude>0.01 then
+            local ok,hit=pcall(function()
+                return workspace:Blockcast(CFrame.new(previous),Vector3.new(2,4,2),delta,params)
+            end)
+            if not ok or hit then return false end
+        end
+        previous=point
+    end
+    return true
+end
+
+function PRO.darkFallbackRoute(from,destination,roomIndex)
+    local routes={{destination}}
+    local saved=PRO.preLootPosition
+    if saved and saved.run==getDungeon() and saved.room==roomIndex
+        and os.clock()-saved.time<90 then
+        table.insert(routes,{saved.position,destination})
+    end
+    table.insert(routes,{Vector3.new(destination.X,from.Y,from.Z),destination})
+    table.insert(routes,{Vector3.new(from.X,from.Y,destination.Z),destination})
+    for _,route in ipairs(routes) do
+        local previous=from
+        local valid=true
+        for _,point in ipairs(route) do
+            if not PRO.safeDarkSegment(previous,point,roomIndex) then valid=false;break end
+            previous=point
+        end
+        if valid then return route end
+    end
+    return nil
+end
+
 function PRO.walkDarkApproach(id,destination,roomIndex,parts)
     local deadline=os.clock()+30
     local function ready()
@@ -2558,12 +2606,22 @@ function PRO.walkDarkApproach(id,destination,roomIndex,parts)
             })
             path:ComputeAsync(root.Position,destination)
         end)
-        if not ok or not path or path.Status~=Enum.PathStatus.Success then
-            PRO.log("Porta Dark: caminho indisponível: "..tostring(err or (path and path.Status)))
-            stopMovement();return false
+        local points={}
+        if ok and path and path.Status==Enum.PathStatus.Success then
+            points=path:GetWaypoints()
         end
-        local points=path:GetWaypoints()
-        if #points==0 then stopMovement();return false end
+        local fallback=false
+        if #points==0 then
+            PRO.log("Porta Dark: caminho indisponível; procurando rota livre: "..tostring(err or (path and path.Status)))
+            local route=PRO.darkFallbackRoute(root.Position,destination,roomIndex)
+            if not route then
+                PRO.log("Porta Dark: nenhuma rota segura após a coleta; nova tentativa em breve")
+                stopMovement();return false
+            end
+            fallback=true
+            for _,point in ipairs(route) do table.insert(points,{Position=point}) end
+            PRO.log("Porta Dark: retomando caminhada por rota alternativa")
+        end
         -- Approach paths must stay in the current room. Crossing is a separate step.
         for _,point in ipairs(points) do
             local _,index=PRO.floorRun({Position=point.Position},{getDungeon()})
@@ -2574,6 +2632,10 @@ function PRO.walkDarkApproach(id,destination,roomIndex,parts)
         end
         local followed=true
         for _,point in ipairs(points) do
+            local liveRoot=getRoot()
+            if fallback and (not liveRoot or not PRO.safeDarkSegment(liveRoot.Position,point.Position,roomIndex)) then
+                followed=false;break
+            end
             if not walkWaypoint(point.Position,point.Action==Enum.PathWaypointAction.Jump) then followed=false;break end
         end
         root=getRoot()
@@ -3025,6 +3087,9 @@ local function collectDroppedItems(id)
     -- Keep the search centered on the original room, even after teleporting.
     local originRoot = getRoot()
     local lootOrigin = originRoot and originRoot.Position or nil
+    if PRO.dungeonId=="dark" and lootOrigin then
+        PRO.preLootPosition={position=lootOrigin,room=currentRoom,run=getDungeon(),time=os.clock()}
+    end
     while validSession(id)
         and os.clock() - started < CFG.LOOT_TIMEOUT do
         local drops = getNearbyDrops(lootOrigin)
@@ -5003,7 +5068,7 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.5 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.6 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
