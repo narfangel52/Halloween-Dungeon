@@ -1,4 +1,4 @@
-# Nerfangel Hub V3.1 — BETA
+# Nerfangel Hub V3.2 — BETA
 
 Preserves the existing v2 files. V3 is a separate experimental release, not a verified Dark Dungeon automation.
 
@@ -33,3 +33,11 @@ Reviewed GitHub code search and repository metadata, ScriptBlox, Delta Scripts, 
 Luau syntax parsed; scoped GUI predicate and candidate detection exercised in an isolated Lua runtime with mocked objects. This does not test Roblox behavior. No external script was executed during research. No claim of successful Dark runs, boss kills or replay.
 
 Original gameplay base attribution remains in source. Changes made under the user's stated authorization.
+
+
+## V3.2: observed current-room exit groups
+The latest user report shows 02_Room4.Door.DoorWood/DoorMetal/DoorMetal2/DoorBolts with CanCollide=false, while DoorFAKE, EntrySeal and trim stay collidable. V3.2 selects only the exact current-room Door group, requires all its physical pieces to be non-collidable, crosses gradually perpendicular to the door plane with floor checks and waits for progress confirmation. It does not disable collision on fake/closed doors.
+
+Observed Scene events room {index,total,waves}, wave {room,wave,waves}, cleared {room,total}, unlock {room,final,yaw} and slam now update progress. A server-provided room index takes priority over inferred floor room. Dark targets must be over the current room, avoiding premature teleport to later-room enemies. Combat logic is otherwise preserved, with new target/weapon/enabled/HP/horizontal-distance/height/attack-count/no-damage telemetry.
+
+Tests: isolated Door-group tests reject fake doors, closed pieces and the final room; actual extracted Scene-state branch tested against observed payloads; Luau syntax parsed. Live traversal and the reported damage failure still require user verification. A cleared server event does not establish who caused the damage.
