@@ -192,7 +192,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.3]",message)
+    print("[Nerfangel V3.4]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -561,7 +561,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.3 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.4 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1459,16 +1459,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.3 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.4 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.3 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.4 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.3 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.4 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1479,7 +1479,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.3 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.4 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -2514,6 +2514,75 @@ function PRO.doorApproach(center,normal,size,position)
     return center-normal*(thickness/2+5),center+normal*(thickness/2+8),normal
 end
 
+function PRO.walkDarkApproach(id,destination,roomIndex,parts)
+    local deadline=os.clock()+30
+    local function ready()
+        if not validSession(id) or currentRoom~=roomIndex or os.clock()>=deadline then return false end
+        local hum=getHumanoid()
+        if not hum or hum.Health<=0 then return false end
+        for _,part in ipairs(parts) do if not part.Parent or part.CanCollide then return false end end
+        return true
+    end
+    local function walkWaypoint(point,jump)
+        if not ready() then return false end
+        local root,hum=getRoot(),getHumanoid()
+        if not root then return false end
+        if horizontalDistance(root.Position,point)<=1.5 then return true end
+        if jump then hum.Jump=true end
+        hum:MoveTo(point)
+        local started=os.clock()
+        local checkedAt=started
+        local lastPosition=root.Position
+        while ready() and os.clock()-started<8 do
+            task.wait(0.1)
+            root=getRoot()
+            if not root then return false end
+            if horizontalDistance(root.Position,point)<=1.5 then return true end
+            if os.clock()-checkedAt>=1.8 then
+                if horizontalDistance(root.Position,lastPosition)<0.5 then return false end
+                checkedAt=os.clock();lastPosition=root.Position
+            end
+        end
+        return false
+    end
+    for attempt=1,2 do
+        if not ready() then stopMovement();return false end
+        local root=getRoot()
+        if not root then return false end
+        if horizontalDistance(root.Position,destination)<=2 then return true end
+        local path
+        local ok,err=pcall(function()
+            path=game:GetService("PathfindingService"):CreatePath({
+                AgentRadius=2,AgentHeight=5,AgentCanJump=true,WaypointSpacing=3,
+            })
+            path:ComputeAsync(root.Position,destination)
+        end)
+        if not ok or not path or path.Status~=Enum.PathStatus.Success then
+            PRO.log("Porta Dark: caminho indisponível: "..tostring(err or (path and path.Status)))
+            stopMovement();return false
+        end
+        local points=path:GetWaypoints()
+        if #points==0 then stopMovement();return false end
+        -- Approach paths must stay in the current room. Crossing is a separate step.
+        for _,point in ipairs(points) do
+            local _,index=PRO.floorRun({Position=point.Position},{getDungeon()})
+            if index~=roomIndex then
+                PRO.log("Porta Dark: caminho de aproximação sairia da sala; cancelado")
+                stopMovement();return false
+            end
+        end
+        local followed=true
+        for _,point in ipairs(points) do
+            if not walkWaypoint(point.Position,point.Action==Enum.PathWaypointAction.Jump) then followed=false;break end
+        end
+        root=getRoot()
+        if followed and ready() and root and horizontalDistance(root.Position,destination)<=2 then return true end
+        stopMovement()
+        PRO.log("Porta Dark: aproximação interrompida; recalculando "..attempt.."/2")
+    end
+    return false
+end
+
 function PRO.crossDarkDoor(id)
     local door,assembly,parts=PRO.darkDoor()
     local root,humanoid,char=getRoot(),getHumanoid(),getCharacter()
@@ -2534,7 +2603,7 @@ function PRO.crossDarkDoor(id)
         PRO.log("Porta Dark: piso de aproximação/saída não confirmado; movimento cancelado")
         return false
     end
-    -- Verify that the alignment teleport stays on the current-room side.
+    -- Verify that the walking alignment point stays on the current-room side.
     local _,nearRoom=PRO.floorRun({Position=near},{getDungeon()})
     if nearRoom~=before then
         PRO.log("Porta Dark: alinhamento fora da sala atual; movimento cancelado")
@@ -2542,20 +2611,20 @@ function PRO.crossDarkDoor(id)
     end
     if not validSession(id) or currentRoom~=before then return false end
     for _,part in ipairs(parts) do if not part.Parent or part.CanCollide then return false end end
-    statusLabel.Text="Alinhando em frente à porta da sala "..before
-    humanoid:MoveTo(root.Position)
-    char:PivotTo(CFrame.lookAt(near,near+normal))
-    PRO.log("Porta Dark: alinhamento por "..anchor:GetFullName()..
-        " | origem="..tostring(near).." saída="..tostring(far).." direção="..tostring(normal))
-    task.wait(0.15)
+    if os.clock()<(PRO.nextDoorAttempt or 0) then return false end
+    statusLabel.Text="Caminhando até a porta da sala "..before
+    PRO.log("Porta Dark: aproximação a pé por "..anchor:GetFullName()..
+        " | destino="..tostring(near).." saída="..tostring(far))
+    if not PRO.walkDarkApproach(id,near,before,parts) then
+        PRO.nextDoorAttempt=os.clock()+3
+        statusLabel.Text="Não foi possível alcançar a porta a pé; veja o diagnóstico"
+        return false
+    end
     if not validSession(id) or currentRoom~=before then return currentRoom>before end
     root=getRoot();humanoid=getHumanoid()
     if not root or not humanoid or humanoid.Health<=0 then return false end
-    if horizontalDistance(root.Position,near)>3 then
-        PRO.log("Porta Dark: jogo não confirmou posição de alinhamento")
-        return false
-    end
-    -- Walk straight only AFTER the alignment is accepted. No lateral glide.
+    -- No PivotTo/CFrame/velocity write anywhere in the Dark door traversal.
+    -- The whole transition uses ordinary walking, with natural Humanoid rotation.
     statusLabel.Text="Caminhando reto pela porta aberta"
     humanoid:MoveTo(far)
     local started=os.clock()
@@ -4912,7 +4981,7 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.3 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.4 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
