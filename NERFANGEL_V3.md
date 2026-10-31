@@ -1,4 +1,4 @@
-# Nerfangel Hub V3.2 — BETA
+# Nerfangel Hub V3.3 — BETA
 
 Preserves the existing v2 files. V3 is a separate experimental release, not a verified Dark Dungeon automation.
 
@@ -41,3 +41,7 @@ The latest user report shows 02_Room4.Door.DoorWood/DoorMetal/DoorMetal2/DoorBol
 Observed Scene events room {index,total,waves}, wave {room,wave,waves}, cleared {room,total}, unlock {room,final,yaw} and slam now update progress. A server-provided room index takes priority over inferred floor room. Dark targets must be over the current room, avoiding premature teleport to later-room enemies. Combat logic is otherwise preserved, with new target/weapon/enabled/HP/horizontal-distance/height/attack-count/no-damage telemetry.
 
 Tests: isolated Door-group tests reject fake doors, closed pieces and the final room; actual extracted Scene-state branch tested against observed payloads; Luau syntax parsed. Live traversal and the reported damage failure still require user verification. A cleared server event does not establish who caused the damage.
+
+
+## V3.3: align, then walk
+Per user feedback, replaces the diagonal approach glide with a teleport to the current-room side of the doorway, followed by Humanoid:MoveTo straight through. Prefers the stationary DoorThreshold anchor, falling back to DoorWood. Checks floor on both endpoints and the current room at the approach point, validates accepted alignment and stops blocked walking. Combat code unchanged. Isolated geometry tested for four orientations and both player sides; no live traversal test claimed.
