@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.19]",message)
+    print("[Nerfangel V3.20]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.19 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.20 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1563,16 +1563,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.19 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.20 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.19 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.20 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.19 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.20 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1583,7 +1583,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.19 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.20 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -5629,7 +5629,7 @@ do
     local diag=tab:Section({Title="Diagnóstico do hub e do farm",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.19 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.20 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5729,6 +5729,7 @@ do
             local t=PRO.tower
             add("TORRE ativa="..tostring(t.active).." fase="..tostring(t.uiPhase).." andar="..tostring(t.floor).." wave="..tostring(t.wave).."/"..tostring(t.waves).." run="..tostring(t.run))
             if t.arena then add("TORRE arena="..t.arena:GetFullName()) end
+            add("TORRE aéreo="..tostring(t.airMode).." altura="..tostring(t.airHeight).." armas="..tostring(t.weaponInfo))
         end
         for _,line in ipairs(PRO.errors) do add(line) end
         local text=table.concat(lines,"\n")
@@ -5764,6 +5765,7 @@ do
     local T={active=false,token=0,phase="idle",floor=0,wave=0,waves=0,autoNext=true,autoReady=true,autoLoot=true,
         target=nil,nextAttack=0,nextMove=0,cleared=0,sent={},floorLimit=0}
     PRO.tower=T
+    T.autoWeapon=true;T.airMode=false;T.airHeight=8
     function T.node(root,...)
         for _,name in ipairs({...}) do root=root and root:FindFirstChild(name) end
         return root
@@ -5896,6 +5898,115 @@ do
         T.target=best
         return best
     end
+    function T.pairTools()
+        local found={}
+        local char=getCharacter()
+        local containers={char,player:FindFirstChild("Backpack")}
+        for _,container in pairs(containers) do
+            for _,tool in ipairs(container:GetChildren()) do
+                if tool:IsA("Tool") then
+                    local name=tostring(tool:GetAttribute("WeaponId") or tool.Name):lower():gsub("[^%w]","")
+                    if name=="crabhammer" then found.hammer=tool end
+                    if name=="halloweengreatsword" or name=="pumpkingreatsword" then found.sword=tool end
+                end
+            end
+        end
+        return found
+    end
+    function T.heldMultiplier()
+        local hud=playerGui:FindFirstChild("TowerRunV5")
+        local label=T.node(hud,"Bar","Held","Mult")
+        if not T.visible(label) then return nil end
+        return tonumber(T.text(label):gsub(",","."):match("[xX×]%s*(%d+%.?%d*)"))
+    end
+    function T.chooseWeapon(id)
+        if not T.autoWeapon then return MW.equipWeapon() end
+        if os.clock()<(T.weaponRetry or 0) then return getWeapon() end
+        local pair=T.pairTools()
+        if not pair.hammer or not pair.sword then
+            T.weaponInfo="Deixe Crab Hammer e Halloween/Pumpkin Greatsword nos atalhos/mochila"
+            return getWeapon()
+        end
+        local key=tostring(T.floor)
+        if T.weaponFloor~=key then
+            local char,hum=getCharacter(),getHumanoid()
+            local original=getWeapon()
+            local scores={}
+            for _,tool in ipairs({pair.hammer,pair.sword}) do
+                if not T.valid(id) or getCharacter()~=char or T.readUi()~="fight" or T.floor~=tonumber(key) then return nil end
+                if tool.Parent~=char then hum:EquipTool(tool) end
+                task.wait(0.45)
+                if not T.valid(id) or getCharacter()~=char or T.readUi()~="fight" or T.floor~=tonumber(key) then return nil end
+                if tool.Parent==char and getWeapon()==tool then scores[tool]=T.heldMultiplier() end
+            end
+            if scores[pair.hammer] and scores[pair.sword] then
+                local chosen=scores[pair.hammer]>scores[pair.sword] and pair.hammer
+                    or scores[pair.sword]>scores[pair.hammer] and pair.sword
+                    or (original==pair.hammer or original==pair.sword) and original or pair.sword
+                T.weaponChoice=chosen;T.weaponFloor=key
+                T.weaponInfo=string.format("Hammer x%g | Greatsword x%g → %s",scores[pair.hammer],scores[pair.sword],chosen.Name)
+                PRO.log("Torre armas: "..T.weaponInfo)
+            else
+                T.weaponInfo="Multiplicador não confirmado; mantendo arma atual"
+                T.weaponRetry=os.clock()+5
+                if original and original.Parent and T.valid(id) and getCharacter()==char then hum:EquipTool(original) end
+                return getWeapon()
+            end
+        end
+        local choice=T.weaponChoice
+        local char,hum=getCharacter(),getHumanoid()
+        if choice and choice.Parent and char and hum then
+            if choice.Parent~=char then hum:EquipTool(choice) end
+            return choice.Parent==char and choice or nil
+        end
+        T.weaponFloor=nil
+        return getWeapon()
+    end
+    function T.releaseAir()
+        if T.airObjects then
+            for _,obj in ipairs(T.airObjects) do pcall(function()obj:Destroy()end) end
+            T.airObjects=nil
+        end
+        local saved=T.airSaved
+        T.airSaved=nil
+        if saved and saved.hum.Parent then
+            saved.hum.AutoRotate=saved.autoRotate
+            saved.hum.PlatformStand=saved.platformStand
+            if saved.hum.Health>0 and not saved.platformStand then
+                pcall(function()saved.hum:ChangeState(Enum.HumanoidStateType.GettingUp)end)
+            end
+        end
+    end
+    function T.airTrack(npc,id)
+        local root,hum,char=getRoot(),getHumanoid(),getCharacter()
+        local pos=enemyPosition(npc)
+        if not T.valid(id) or not root or not hum or hum.Health<=0 or not pos or T.readUi()~="fight" then T.releaseAir();return false end
+        if T.airSaved and (T.airSaved.root~=root or T.airSaved.hum~=hum) then T.releaseAir() end
+        local point=pos+Vector3.new(0,T.airHeight,0)
+        local overlap=OverlapParams.new()
+        overlap.FilterType=Enum.RaycastFilterType.Exclude;overlap.FilterDescendantsInstances={char,npc};overlap.RespectCanCollide=true
+        if not MW.regionalLandingClear(point,overlap) then T.releaseAir();T.status("Espaço acima do alvo bloqueado");return false end
+        if not T.airObjects then
+            T.airSaved={root=root,hum=hum,autoRotate=hum.AutoRotate,platformStand=hum.PlatformStand}
+            T.airObjects={}
+            local attachment=Instance.new("Attachment");table.insert(T.airObjects,attachment)
+            attachment.Name="NerfangelTowerAir";attachment.Parent=root
+            local position=Instance.new("AlignPosition");table.insert(T.airObjects,position)
+            position.Name="NerfangelTowerAirPosition";position.Mode=Enum.PositionAlignmentMode.OneAttachment
+            position.Attachment0=attachment;position.ApplyAtCenterOfMass=true;position.MaxForce=math.max(10000,root.AssemblyMass*workspace.Gravity*12)
+            position.MaxVelocity=40;position.Responsiveness=25;position.Position=point;position.Parent=root
+            local orientation=Instance.new("AlignOrientation");table.insert(T.airObjects,orientation)
+            orientation.Name="NerfangelTowerAirOrientation";orientation.Mode=Enum.OrientationAlignmentMode.OneAttachment
+            orientation.Attachment0=attachment;orientation.MaxTorque=1000000;orientation.MaxAngularVelocity=20;orientation.Responsiveness=30;orientation.Parent=root
+            T.airPosition=position;T.airOrientation=orientation
+        end
+        hum.AutoRotate=false;hum.PlatformStand=true
+        local delta=Vector3.new(pos.X-root.Position.X,0,pos.Z-root.Position.Z)
+        local forward=delta.Magnitude>0.1 and delta.Unit or Vector3.new(1,0,0)
+        T.airPosition.Position=point
+        T.airOrientation.CFrame=CFrame.lookAt(point,point+Vector3.new(0,-1,0),forward)
+        return horizontalDistance(root.Position,pos)<=5.5 and math.abs(root.Position.Y-point.Y)<=2
+    end
     function T.land(npc,id,otherSide)
         local root,hum,char=getRoot(),getHumanoid(),getCharacter()
         local pos=enemyPosition(npc)
@@ -6017,6 +6128,7 @@ do
     end
     function T.step(id)
         local phase,floor,button=T.readUi()
+        if phase~="fight" or not T.airMode then T.releaseAir() end
         if floor and floor~=T.floor then T.floor=floor;T.arena=nil;T.target=nil;T.wave=0;T.waves=0;T.sent={} end
         local phaseChanged=phase~=T.uiPhase
         T.uiPhase=phase
@@ -6043,7 +6155,7 @@ do
             if T.autoNext then local sent,reason=T.click(button,id,phase);T.status(sent and "NEXT FLOOR solicitado — aguardando novo andar" or reason) end
         elseif phase=="fight" then
             local npc=T.findEnemy()
-            if not npc then T.status("Aguardando inimigos ou próxima wave");return end
+            if not npc then T.releaseAir();T.status("Aguardando inimigos ou próxima wave");return end
             local hp=npc:GetAttribute("Health")
             if T.lastHp and hp<T.lastHp then T.lastDamage=os.clock() end
             T.lastHp=hp
@@ -6053,7 +6165,12 @@ do
             local noDamage=now-(T.lastDamage or now)
             local distance=horizontalDistance(root.Position,pos)
             local height=math.abs(root.Position.Y-pos.Y)
-            if now>=T.nextMove and (distance>3.5 or height>7 or noDamage>6) then
+            if T.airMode then
+                if not T.airTrack(npc,id) then return end
+                root=getRoot();pos=enemyPosition(npc)
+                if not root or not pos then return end
+                distance=horizontalDistance(root.Position,pos);height=math.abs(root.Position.Y-pos.Y)
+            elseif now>=T.nextMove and (distance>3.5 or height>7 or noDamage>6) then
                 T.nextMove=now+(noDamage>6 and 2 or 0.4)
                 local ok=T.land(npc,id,noDamage>6)
                 if not T.valid(id) or T.readUi()~="fight" then return end
@@ -6067,9 +6184,12 @@ do
                 if not root or not pos then return end
                 distance=horizontalDistance(root.Position,pos);height=math.abs(root.Position.Y-pos.Y)
             end
-            local tool=MW.equipWeapon()
+            local tool=T.chooseWeapon(id)
             if not tool then T.status("Equipe sua arma de combate");return end
-            if distance<=5.5 and height<=8 and tool.Enabled and os.clock()>=T.nextAttack
+            root=getRoot();pos=enemyPosition(npc)
+            if not root or not pos then return end
+            distance=horizontalDistance(root.Position,pos);height=math.abs(root.Position.Y-pos.Y)
+            if distance<=5.5 and height<=(T.airMode and T.airHeight+2 or 8) and tool.Enabled and os.clock()>=T.nextAttack
                 and T.valid(id) and T.readUi()=="fight" and npc.Parent and npc:GetAttribute("Health")>0 then
                 tool:Activate();T.nextAttack=os.clock()+CFG.ATTACK_INTERVAL
                 T.status("Combatendo "..tostring(npc:GetAttribute("Animal") or npc.Name))
@@ -6078,6 +6198,7 @@ do
     end
     function T.stop(reason)
         T.active=false;T.token+=1;T.target=nil;T.arena=nil
+        T.releaseAir()
         if T.connection then T.connection:Disconnect();T.connection=nil end
         stopMovement()
         if T.module and not T.sync then
@@ -6094,6 +6215,8 @@ do
         if MW.worldFarmRunning then MW.stopWorldFarm() end
         if T.connection then T.connection:Disconnect() end
         T.token+=1;T.active=true;T.sent={};T.run=nil;T.floor=0;T.wave=0;T.waves=0;T.winKey=nil;T.lootKey=nil
+        T.releaseAir()
+        T.weaponFloor=nil;T.weaponRetry=0;T.weaponChoice=nil
         T.nextMove=0;T.nextAttack=0;T.target=nil;T.uiPhase=nil;T.missingSince=nil
         T.connection=push.OnClientEvent:Connect(T.onPush)
         local id=T.token
@@ -6104,6 +6227,7 @@ do
                     if T.active then
                         T.progressLabel:SetValue("Andar "..T.floor..(T.floor>0 and T.floor%5==0 and " • Boss" or "").." | wave "..T.wave.."/"..(T.waves>0 and T.waves or "?"))
                         T.statsLabel:SetValue("Andares concluídos: "..T.cleared)
+                        T.weaponLabel:SetValue(T.weaponInfo or "Aguardando combate para comparar bônus")
                     end
                     task.wait(0.1)
                 end
@@ -6122,9 +6246,21 @@ do
     controls:Toggle({Title="Confirmar READY no próximo andar",Default=true,Callback=function(v)T.autoReady=v==true end})
     controls:Toggle({Title="Coletar ao concluir o andar",Default=true,Callback=function(v)T.autoLoot=v==true end})
     controls:Slider({Title="Parar após este andar (0 = ilimitado)",Min=0,Max=500,Step=1,Default=0,Callback=function(v)T.floorLimit=math.max(0,math.floor(tonumber(v) or 0))end})
-    local state=tab:Section({Title="2 • Acompanhamento",Icon="activity"})
+    local combat=tab:Section({Title="2 • Armas e combate aéreo",Icon="swords"})
+    combat:Toggle({Title="Alternar Crab Hammer / Greatsword pelo bônus",Default=true,Callback=function(v)
+        T.autoWeapon=v==true;T.weaponFloor=nil;T.weaponRetry=0
+    end})
+    combat:Paragraph({Title="Comparação no início do combate",Content="Equipa brevemente as duas armas e lê o multiplicador real do HUD. Escolhe o maior bônus; em empate preserva a arma anterior. Isso não compara dano base nem velocidade de ataque."})
+    combat:Toggle({Title="Combate aéreo experimental — frente para baixo",Default=false,Callback=function(v)
+        T.airMode=v==true
+        if not T.airMode then T.releaseAir() end
+    end})
+    combat:Slider({Title="Altura acima do monstro",Min=4,Max=12,Step=1,Default=8,Callback=function(v)T.airHeight=math.clamp(tonumber(v) or 8,4,12)end})
+    combat:Paragraph({Title="Ataque automático",Content="Usa a ativação da arma equipada durante o combate. O voo não garante evitar dano; a altura pode impedir o alcance da arma. Não reproduz uma kill aura de código desconhecido."})
+    local state=tab:Section({Title="3 • Acompanhamento",Icon="activity"})
     T.statusLabel=state:Label({Text="Estado",Value="Entre manualmente na torre e ative"})
     T.progressLabel=state:Label({Text="Progresso",Value="Andar — | wave —"})
+    T.weaponLabel=state:Label({Text="Armas",Value="Aguardando comparação"})
     T.statsLabel=state:Label({Text="Sessão",Value="Andares concluídos: 0"})
     state:Button({Title="Liberar nova tentativa de clique",Icon="mouse-pointer-click",Callback=function()
         T.sent={};T.status("Nova tentativa liberada pelo usuário")
