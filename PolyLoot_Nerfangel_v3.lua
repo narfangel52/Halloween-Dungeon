@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.14]",message)
+    print("[Nerfangel V3.15]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.14 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.15 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -766,8 +766,8 @@ MW.worldTab:Module({
 })
 MW.selectionSection:Slider({
     Title="Pausa entre passos de teleporte (s)",
-    Min=0.4,Max=1.2,Default=0.8,Step=0.1,
-    Callback=function(value) MW.regionalStepWait=math.clamp(tonumber(value) or 0.8,0.4,1.2) end,
+    Min=0.1,Max=1.2,Default=0.8,Step=0.05,
+    Callback=function(value) MW.regionalStepWait=math.clamp(tonumber(value) or 0.8,0.1,1.2) end,
 })
 MW.worldEnemiesModule=MW.worldTab:Module({
     Title="Auto Farm Single Enemy",
@@ -1480,16 +1480,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.14 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.15 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.14 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.15 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.14 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.15 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1500,7 +1500,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.14 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.15 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -4221,6 +4221,25 @@ function MW.regionalLandingClear(point,overlap)
     return true
 end
 
+-- Probe from above ledges; accept walkable top surfaces, not wall faces.
+function MW.regionalGroundAt(probe,baseY,npc)
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Exclude
+    local excluded={}
+    local char=getCharacter()
+    local live=workspace:FindFirstChild("Animal_Live")
+    if char then table.insert(excluded,char) end
+    if live then table.insert(excluded,live) elseif npc then table.insert(excluded,npc) end
+    params.FilterDescendantsInstances=excluded
+    params.RespectCanCollide=true;params.IgnoreWater=true
+    local from=Vector3.new(probe.X,baseY+40,probe.Z)
+    local hit=workspace:Raycast(from,Vector3.new(0,-90,0),params)
+    if not hit or hit.Normal.Y<0.65 then return nil end
+    local landingY=hit.Position.Y+3.2
+    if landingY-baseY>24 or baseY-landingY>20 then return nil end
+    return hit.Position
+end
+
 -- Travel to distant regional targets in bounded, floor-checked steps.
 function MW.regionalSteps(npc,id)
     local character=getCharacter()
@@ -4233,8 +4252,11 @@ function MW.regionalSteps(npc,id)
         local hp=npc.Parent and npc:GetAttribute("Health")
         if not root or not hum or hum.Health<=0 or not pos or type(hp)~="number" or hp<=0 then return false end
         local distance=horizontalDistance(root.Position,pos)
-        if distance<=30 then return true end
+        local targetGround=tonumber(npc:GetAttribute("_GroundY"))
+        local targetY=targetGround and targetGround+3.2 or pos.Y
+        if distance<=30 and math.abs(root.Position.Y-targetY)<=8 then return true end
         local delta=Vector3.new(pos.X-root.Position.X,0,pos.Z-root.Position.Z)
+        if delta.Magnitude<0.1 then delta=Vector3.new(1,0,0) end
         local forward=delta.Unit
         local side=Vector3.new(-forward.Z,0,forward.X)
         local overlap=OverlapParams.new()
@@ -4246,11 +4268,14 @@ function MW.regionalSteps(npc,id)
         for _,length in ipairs({20,12,6}) do
             for _,offset in ipairs({0,0.6,-0.6,1.2,-1.2}) do
                 local direction=(forward+side*offset).Unit
-                local probe=root.Position+direction*math.min(length,distance-25)
-                local ground=MW.groundAt(probe,npc)
-                if ground and math.abs(ground.Y-root.Position.Y)<=12 then
+                local probe=root.Position+direction*math.min(length,math.max(3,distance-5))
+                local ground=MW.regionalGroundAt(probe,root.Position.Y,npc)
+                if ground then
                     local candidate=Vector3.new(probe.X,ground.Y+3.2,probe.Z)
-                    if horizontalDistance(candidate,pos)<distance-1 then
+                    local newDistance=horizontalDistance(candidate,pos)
+                    local heightImproved=math.abs(candidate.Y-targetY)<math.abs(root.Position.Y-targetY)-2
+                    local makesProgress=newDistance<distance-1 or (newDistance<=distance+3 and heightImproved)
+                    if makesProgress and (candidate-root.Position).Magnitude<=28 then
                         if MW.regionalLandingClear(candidate,overlap) then point=candidate;break end
                     end
                 end
@@ -4263,11 +4288,15 @@ function MW.regionalSteps(npc,id)
         end
         if not MW.worldFarmValid(id) or getCharacter()~=character then return false end
         hum:MoveTo(root.Position)
+        local heightDelta=point.Y-root.Position.Y
         character:PivotTo(CFrame.lookAt(point,Vector3.new(pos.X,point.Y,pos.Z)))
         steps=steps+1
+        if math.abs(heightDelta)>8 then
+            PRO.log("Farm XP: desnível de "..math.floor(heightDelta).." studs; ponto superior/inferior validado")
+        end
         local untilTime=os.clock()+(MW.regionalStepWait or 0.8)
         repeat
-            task.wait(0.1)
+            task.wait(math.min(0.05,MW.regionalStepWait or 0.8))
             if not MW.worldFarmValid(id) or getCharacter()~=character then return false end
             root=getRoot()
             if not root or horizontalDistance(root.Position,point)>6 or math.abs(root.Position.Y-point.Y)>8 then
@@ -5282,7 +5311,7 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.14 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.15 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5392,6 +5421,7 @@ do
         diagLabel:SetValue(ok and (result and "Estrutura compatível. Adaptador ainda exige teste no jogo." or tostring(reason)) or tostring(result))
     end})
 end
+
 
 
 
