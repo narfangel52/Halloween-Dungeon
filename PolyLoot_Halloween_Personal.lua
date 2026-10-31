@@ -1,8 +1,3 @@
--- POLY LOOT PERSONAL 1.0
--- Derived from Lyrancy/polyloot-speedrun main.lua, SHA 8bf2525bd210dda9d55f61ea81d0cf6e89954901
--- Modified on user-stated permission. Not tested in a Roblox executor.
--- Auto Replay consumes one Halloween Dungeon 2026 item per restart.
--- Auto Sell and Auto Replay remain off by default; enable explicitly.
 -- POLY LOOT V6.0 | OASISUI | DUNGEON + MAIN WORLD + AUTO SELL
 -- Release version: V6.0 | Based on V5.10.6 (no gameplay logic changes)
 -- V5.10.4: World Boss UI simplified; boss combat and automation logic unchanged.
@@ -18,9 +13,10 @@ local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- ============================================
--- PERSONAL EDITION | modified at user's stated authorization
--- No key server or access timer. Original gameplay author: Lyrancy.
+-- Access key removed under user-stated authorization.
+local accessGranted = true
+local accessDeadline = math.huge
+
 -- ============================================
 -- EINSTELLUNGEN
 
@@ -67,7 +63,7 @@ CFG.AUTO_ENTER_FIRST_ROOM = true
 -- Halloween Dungeon 2026 item. Selects available executor APIs automatically.
 CFG.AUTO_REPLAY_DEFAULT = false
 -- Anti-AFK is enabled by default, but only sends activity while the
--- active Speedrun is running. It can be toggled independently in the GUI.
+-- licensed Speedrun is running. It can be toggled independently in the GUI.
 CFG.ANTI_AFK_DEFAULT = true
 CFG.REPLAY_CONFIRM_TIMEOUT = 15
 CFG.transitionUntil = 0
@@ -171,10 +167,8 @@ end
 
 local function getRoot()
     local character = getCharacter()
-    if not character or not character:IsDescendantOf(workspace) then return nil end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    if root and root:IsA("BasePart") and root.Parent == character then return root end
-    return nil
+    return character
+        and character:FindFirstChild("HumanoidRootPart")
 end
 
 local function getHumanoid()
@@ -206,10 +200,8 @@ local function getWeapon()
     return fallback
 end
 
-local gui -- Shared forward declaration for session validation and UI initialization.
-
 local function validSession(id)
-    return running and sessionId == id and gui ~= nil and gui.Parent ~= nil
+    return running and sessionId == id and accessGranted and os.clock() < accessDeadline
 end
 
 local function debugPrint(...)
@@ -236,7 +228,7 @@ if oldGui then oldGui:Destroy() end
 
 -- A lightweight lifecycle parent retained for the existing dungeon logic,
 -- and for target Highlights that were parented to the old ScreenGui.
-gui = Instance.new("ScreenGui")
+local gui = Instance.new("ScreenGui")
 gui.Name = "PolyLootDungeonV4"
 gui.ResetOnSpawn = false
 gui.Parent = playerGui
@@ -247,7 +239,7 @@ local OasisUI = loadstring(game:HttpGet(
 
 local Window = OasisUI:CreateWindow({
     Title = "POLY LOOT",
-    Subtitle = "Personal 1.0 | Dungeon + Main World + Auto Sell",
+    Subtitle = "V6.0 | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -765,7 +757,7 @@ end
 
 -- forceNow is used only for an explicit OasisUI button press.
 -- It bypasses the capacity threshold and the automatic monitor toggle,
--- NEVER the allowlist, or item protection checks.
+-- NEVER the license, allowlist, or item protection checks.
 function AS.preview(reason,execute,forceNow)
     if AS.busy then
         statusAS("Sale already running")
@@ -795,6 +787,11 @@ function AS.preview(reason,execute,forceNow)
             print("[AUTOSELL] Preview only: zero remotes called")
             return
         end
+        if not accessGranted or os.clock()>=accessDeadline then
+            warn("[AUTOSELL] Valid license required")
+            statusAS("Sale blocked: license invalid")
+            return
+        end
         if not forceNow and not (AS.live and AS.enabled) then
             warn("[AUTOSELL] Automatic monitor is disabled")
             return
@@ -809,7 +806,7 @@ function AS.preview(reason,execute,forceNow)
         local limit=forceNow and #plan.candidates or 1
         local sent=0
         for i=1,limit do
-            if not gui.Parent then break end
+            if not gui.Parent or not accessGranted or os.clock()>=accessDeadline then break end
             if not forceNow and not AS.enabled then break end
             local target=plan.candidates[i]
             local inv2,data2=inventorySnapshot()
@@ -990,7 +987,7 @@ task.defer(refreshRegistryDropdownAS)
 
 task.spawn(function()
     while gui.Parent do
-        if AS.enabled then
+        if AS.enabled and accessGranted and os.clock()<accessDeadline then
             if os.clock()-AS.lastRun>=12 then
                 AS.preview("automatic capacity check",true)
             end
@@ -1061,7 +1058,7 @@ local autoReplayModule = dungeonTab:Module({
 
 local antiAfkModule = dungeonTab:Module({
     Title = "Anti-AFK",
-    Description = "Attempt to prevent idle disconnects while a active farm is active.",
+    Description = "Attempt to prevent idle disconnects while a licensed farm is active.",
     Icon = "shield-check",
     Keybind = false,
     Default = CFG.ANTI_AFK_DEFAULT,
@@ -1114,7 +1111,7 @@ onDungeonSelected = function(value)
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Personal 1.0 | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("V6.0 | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1125,7 +1122,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Personal 1.0" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot V6.0" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -1134,8 +1131,8 @@ local healthLabel = textProxy(live:Label({ Text = "Target HP", Value = "HP: -" }
 local killLabel = textProxy(live:Label({ Text = "Defeated", Value = "Enemies defeated: 0" }))
 local attackLabel = textProxy(live:Label({ Text = "Attacks", Value = "Attacks: 0" }))
 local statusLabel = textProxy(live:Label({ Text = "Status", Value = "Status: Ready" }))
-local editionArea = statusTab:Section({ Title = "Personal Edition", Icon = "info" })
-editionArea:Label({ Text = "Access", Value = "Local / no key" })
+local licenseArea = statusTab:Section({ Title = "License", Icon = "key-round" })
+local licenseButton = textProxy(licenseArea:Label({ Text = "Remaining access", Value = "Not activated" }))
 
 local function setButton(enabled)
     syncingSpeedrun = true
@@ -1168,9 +1165,17 @@ local function stopMovement()
 end
 
 
--- ============================================
--- Personal edition opens directly. Farming remains opt-in.
+-- Key UI and verification removed; retain compatibility with original checks.
+local previousAccessGui = playerGui:FindFirstChild("PolyLootAccessV4")
+if previousAccessGui then previousAccessGui:Destroy() end
+local accessGui = Instance.new("ScreenGui")
+accessGui.Name = "PolyLootAccessV4"
+accessGui.Enabled = false
+accessGui.Parent = playerGui
+local accessStatus = Instance.new("TextLabel")
+accessStatus.Parent = accessGui
 frame.Visible = true
+licenseButton.Text = "Access: no key required"
 
 -- ============================================
 -- UNIVERSAL ANTI-AFK | IDLE EVENT + SAFE FALLBACKS
@@ -1268,7 +1273,8 @@ antiAfkConnection = player.Idled:Connect(function()
         return
     end
 
-    if not antiAfkEnabled or not (running or MW.worldFarmRunning) then
+    if not antiAfkEnabled or not (running or MW.worldFarmRunning)
+        or not accessGranted or os.clock() >= accessDeadline then
         return
     end
 
@@ -1404,7 +1410,7 @@ local function installSceneReplayListener()
                     "open", tostring(data.open))
             end
             -- Only interpret replay events for a completed dungeon.
-            if not running or not gui.Parent or not
+            if not running or not accessGranted or not
                 (waitingForRestart or isDungeonComplete()) then
                 return
             end
@@ -2890,6 +2896,9 @@ local function attemptAutoReplay(id)
     if not validSession(id) or not isDungeonComplete() then
         return false, "Endscreen not ready"
     end
+    if accessGui.Enabled then
+        return false, "Close the key window before replay"
+    end
     local again, buttonError = getReplayButton()
     if not again then
         return false, buttonError
@@ -2915,12 +2924,6 @@ end
 local function startSpeedrun(id)
     debugPrint("Dungeon Speedrun started!")
     while validSession(id) do
-        local root, humanoid = getRoot(), getHumanoid()
-        if not root or not humanoid or humanoid.Health <= 0 then
-            statusLabel.Text = "Waiting for character / respawn"
-            task.wait(0.5)
-            continue
-        end
         if isDungeonComplete() then
             if not waitingForRestart then
                 waitingForRestart = true
@@ -3115,6 +3118,7 @@ MW.lastCombatLog=0
 
 function MW.worldFarmValid(id)
     return MW.worldFarmRunning and MW.worldFarmSession==id
+        and accessGranted and os.clock()<accessDeadline
         and not running and gui.Parent~=nil
 end
 
@@ -4056,6 +4060,11 @@ function MW.setWorldFarmMode(mode,enabled)
         MW.worldGuiSync=false
     end
     if enabled then
+        if not accessGranted or os.clock()>=accessDeadline then
+            reject("Valid license required")
+            accessGui.Enabled=true
+            return
+        end
         if running and onSpeedrunToggle then onSpeedrunToggle(false) end
         if mode=="enemy" then
             if not MW.validArea(MW.selectedArea) or not MW.selectedEnemyName then
@@ -4152,6 +4161,12 @@ onSpeedrunToggle = function(enabled)
         statusLabel.Text = "Select Halloween Dungeon before starting"
         return
     end
+    if enabled and (not accessGranted or os.clock() >= accessDeadline) then
+        setButton(false)
+        accessGui.Enabled = true
+        accessStatus.Text = "Please verify a valid key."
+        return
+    end
     if running == enabled then return end
     running = enabled
     sessionId = sessionId + 1
@@ -4172,21 +4187,7 @@ onSpeedrunToggle = function(enabled)
         setButton(true)
         statusLabel.Text = "Speedrun started"
         local id = sessionId
-        task.spawn(function()
-            local ok, failure = xpcall(function() startSpeedrun(id) end, debug.traceback)
-            if not ok then
-                warn("[POLY LOOT PERSONAL][Dungeon] " .. tostring(failure))
-                if sessionId == id and gui.Parent then
-                    running = false
-                    sessionId = sessionId + 1
-                    setButton(false)
-                    clearPendingDoor()
-                    pcall(stopMovement)
-                    pcall(clearTarget)
-                    statusLabel.Text = "Stopped after error: open F9 console for details"
-                end
-            end
-        end)
+        task.spawn(startSpeedrun, id)
     else
         clearPendingDoor()
         setButton(false)
@@ -4197,4 +4198,3 @@ onSpeedrunToggle = function(enabled)
 end
 
 print("Poly Loot V6.0 OasisUI | Dungeon + Main World + Auto Sell loaded!")
-
