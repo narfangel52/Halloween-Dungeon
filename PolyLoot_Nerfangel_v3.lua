@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.20]",message)
+    print("[Nerfangel V3.21]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.20 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.21 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1563,16 +1563,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.20 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.21 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.20 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.21 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.20 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.21 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1583,7 +1583,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.20 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.21 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -5629,7 +5629,7 @@ do
     local diag=tab:Section({Title="Diagnóstico do hub e do farm",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.20 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.21 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5729,7 +5729,7 @@ do
             local t=PRO.tower
             add("TORRE ativa="..tostring(t.active).." fase="..tostring(t.uiPhase).." andar="..tostring(t.floor).." wave="..tostring(t.wave).."/"..tostring(t.waves).." run="..tostring(t.run))
             if t.arena then add("TORRE arena="..t.arena:GetFullName()) end
-            add("TORRE aéreo="..tostring(t.airMode).." altura="..tostring(t.airHeight).." armas="..tostring(t.weaponInfo))
+            add("TORRE aéreo="..tostring(t.airMode).." altura="..tostring(t.airHeight).." noclip="..tostring(t.airNoclip).." contínuo="..tostring(t.continuousAttack).." intervalo="..tostring(t.attackPeriod).." armas="..tostring(t.weaponInfo))
         end
         for _,line in ipairs(PRO.errors) do add(line) end
         local text=table.concat(lines,"\n")
@@ -5765,7 +5765,8 @@ do
     local T={active=false,token=0,phase="idle",floor=0,wave=0,waves=0,autoNext=true,autoReady=true,autoLoot=true,
         target=nil,nextAttack=0,nextMove=0,cleared=0,sent={},floorLimit=0}
     PRO.tower=T
-    T.autoWeapon=true;T.airMode=false;T.airHeight=8
+    T.autoWeapon=true;T.airMode=false;T.airHeight=10
+    T.airNoclip=true;T.continuousAttack=false;T.attackPeriod=0.25
     function T.node(root,...)
         for _,name in ipairs({...}) do root=root and root:FindFirstChild(name) end
         return root
@@ -5871,7 +5872,11 @@ do
     function T.inArena(position)
         local arena=T.resolveArena()
         if not arena then return false end
-        local cf,size=arena:GetBoundingBox()
+        if T.boundsArena~=arena or os.clock()-(T.boundsAt or 0)>1 then
+            T.boundsCF,T.boundsSize=arena:GetBoundingBox()
+            T.boundsArena=arena;T.boundsAt=os.clock()
+        end
+        local cf,size=T.boundsCF,T.boundsSize
         local point=cf:PointToObjectSpace(position)
         if math.abs(point.X)>size.X/2+10 or math.abs(point.Z)>size.Z/2+10 or math.abs(point.Y)>size.Y/2+45 then return false end
         return T.ground(position)~=nil
@@ -5962,7 +5967,56 @@ do
         T.weaponFloor=nil
         return getWeapon()
     end
+    function T.releaseNoclip()
+        local state=T.noclipState
+        T.noclipState=nil
+        if not state then return end
+        for _,c in ipairs(state.connections) do c:Disconnect() end
+        for part,original in pairs(state.parts) do
+            pcall(function()part.CanCollide=original end)
+        end
+    end
+    function T.updateNoclip(char,id)
+        if not T.airNoclip or not T.airMode or not T.valid(id) then T.releaseNoclip();return end
+        if T.noclipState and T.noclipState.char==char then return end
+        T.releaseNoclip()
+        local state={char=char,parts=setmetatable({},{__mode="k"}),connections={}}
+        T.noclipState=state
+        local function register(part)
+            if part:IsA("BasePart") and state.parts[part]==nil then
+                state.parts[part]=part.CanCollide
+                part.CanCollide=false
+            end
+        end
+        for _,part in ipairs(char:GetDescendants()) do register(part) end
+        table.insert(state.connections,char.DescendantAdded:Connect(register))
+        table.insert(state.connections,char.DescendantRemoving:Connect(function(part)
+            local original=state.parts[part]
+            if original~=nil then
+                state.parts[part]=nil
+                pcall(function()part.CanCollide=original end)
+            end
+        end))
+        table.insert(state.connections,game:GetService("RunService").PreSimulation:Connect(function()
+            if not T.valid(id) or not T.airMode or not T.airNoclip or getCharacter()~=char or T.readUi()~="fight" then
+                T.releaseAir();return
+            end
+            for part in pairs(state.parts) do
+                if part.Parent and part.CanCollide then part.CanCollide=false end
+            end
+        end))
+    end
+    function T.attackInterval(tool)
+        local interval=T.continuousAttack and T.attackPeriod or CFG.ATTACK_INTERVAL
+        -- Respect explicit numeric weapon cooldowns when the Tool exposes them.
+        for _,name in ipairs({"AttackCooldown","SwingCooldown","Cooldown"}) do
+            local value=tool:GetAttribute(name)
+            if type(value)=="number" and value>0 and value<=10 then interval=math.max(interval,value) end
+        end
+        return interval
+    end
     function T.releaseAir()
+        T.releaseNoclip()
         if T.airObjects then
             for _,obj in ipairs(T.airObjects) do pcall(function()obj:Destroy()end) end
             T.airObjects=nil
@@ -5985,7 +6039,7 @@ do
         local point=pos+Vector3.new(0,T.airHeight,0)
         local overlap=OverlapParams.new()
         overlap.FilterType=Enum.RaycastFilterType.Exclude;overlap.FilterDescendantsInstances={char,npc};overlap.RespectCanCollide=true
-        if not MW.regionalLandingClear(point,overlap) then T.releaseAir();T.status("Espaço acima do alvo bloqueado");return false end
+        if not T.airNoclip and not MW.regionalLandingClear(point,overlap) then T.releaseAir();T.status("Espaço acima do alvo bloqueado");return false end
         if not T.airObjects then
             T.airSaved={root=root,hum=hum,autoRotate=hum.AutoRotate,platformStand=hum.PlatformStand}
             T.airObjects={}
@@ -6000,11 +6054,15 @@ do
             orientation.Attachment0=attachment;orientation.MaxTorque=1000000;orientation.MaxAngularVelocity=20;orientation.Responsiveness=30;orientation.Parent=root
             T.airPosition=position;T.airOrientation=orientation
         end
+        T.updateNoclip(char,id)
         hum.AutoRotate=false;hum.PlatformStand=true
         local delta=Vector3.new(pos.X-root.Position.X,0,pos.Z-root.Position.Z)
         local forward=delta.Magnitude>0.1 and delta.Unit or Vector3.new(1,0,0)
         T.airPosition.Position=point
-        T.airOrientation.CFrame=CFrame.lookAt(point,point+Vector3.new(0,-1,0),forward)
+        local aim=pos-root.Position
+        if aim.Magnitude<0.1 then aim=Vector3.new(0,-1,0) end
+        local up=math.abs(aim.Unit.Y)>0.95 and forward or Vector3.new(0,1,0)
+        T.airOrientation.CFrame=CFrame.lookAt(root.Position,root.Position+aim,up)
         return horizontalDistance(root.Position,pos)<=5.5 and math.abs(root.Position.Y-point.Y)<=2
     end
     function T.land(npc,id,otherSide)
@@ -6191,7 +6249,7 @@ do
             distance=horizontalDistance(root.Position,pos);height=math.abs(root.Position.Y-pos.Y)
             if distance<=5.5 and height<=(T.airMode and T.airHeight+2 or 8) and tool.Enabled and os.clock()>=T.nextAttack
                 and T.valid(id) and T.readUi()=="fight" and npc.Parent and npc:GetAttribute("Health")>0 then
-                tool:Activate();T.nextAttack=os.clock()+CFG.ATTACK_INTERVAL
+                tool:Activate();T.nextAttack=os.clock()+T.attackInterval(tool)
                 T.status("Combatendo "..tostring(npc:GetAttribute("Animal") or npc.Name))
             end
         end
@@ -6227,7 +6285,8 @@ do
                     if T.active then
                         T.progressLabel:SetValue("Andar "..T.floor..(T.floor>0 and T.floor%5==0 and " • Boss" or "").." | wave "..T.wave.."/"..(T.waves>0 and T.waves or "?"))
                         T.statsLabel:SetValue("Andares concluídos: "..T.cleared)
-                        T.weaponLabel:SetValue(T.weaponInfo or "Aguardando combate para comparar bônus")
+                        local info=T.weaponInfo or "Aguardando combate para comparar bônus"
+                        if T.lastWeaponLabel~=info then T.lastWeaponLabel=info;T.weaponLabel:SetValue(info) end
                     end
                     task.wait(0.1)
                 end
@@ -6251,12 +6310,22 @@ do
         T.autoWeapon=v==true;T.weaponFloor=nil;T.weaponRetry=0
     end})
     combat:Paragraph({Title="Comparação no início do combate",Content="Equipa brevemente as duas armas e lê o multiplicador real do HUD. Escolhe o maior bônus; em empate preserva a arma anterior. Isso não compara dano base nem velocidade de ataque."})
-    combat:Toggle({Title="Combate aéreo experimental — frente para baixo",Default=false,Callback=function(v)
+    combat:Toggle({Title="Combate aéreo — mirar no monstro",Default=false,Callback=function(v)
         T.airMode=v==true
         if not T.airMode then T.releaseAir() end
     end})
-    combat:Slider({Title="Altura acima do monstro",Min=4,Max=12,Step=1,Default=8,Callback=function(v)T.airHeight=math.clamp(tonumber(v) or 8,4,12)end})
-    combat:Paragraph({Title="Ataque automático",Content="Usa a ativação da arma equipada durante o combate. O voo não garante evitar dano; a altura pode impedir o alcance da arma. Não reproduz uma kill aura de código desconhecido."})
+    combat:Slider({Title="Altura acima do monstro",Min=4,Max=12,Step=1,Default=10,Callback=function(v)T.airHeight=math.clamp(tonumber(v) or 10,4,12)end})
+    combat:Toggle({Title="Atravessar obstáculos durante o voo",Default=true,Callback=function(v)
+        T.airNoclip=v==true
+        if not T.airNoclip then T.releaseNoclip() end
+    end})
+    combat:Toggle({Title="Ataque contínuo próximo — experimental",Default=false,Callback=function(v)
+        T.continuousAttack=v==true;T.nextAttack=0
+    end})
+    combat:Slider({Title="Intervalo do ataque contínuo (segundos)",Min=0.15,Max=0.65,Step=0.05,Default=0.25,Callback=function(v)
+        T.attackPeriod=math.clamp(tonumber(v) or 0.25,0.15,0.65)
+    end})
+    combat:Paragraph({Title="Ataque automático",Content="O modo contínuo solicita ataques da arma em intervalos menores, respeitando Enabled e cooldowns numéricos expostos. O jogo determina quais inimigos são atingidos; isso não confirma uma kill aura de múltiplos alvos. Colisões são restauradas ao parar o voo."})
     local state=tab:Section({Title="3 • Acompanhamento",Icon="activity"})
     T.statusLabel=state:Label({Text="Estado",Value="Entre manualmente na torre e ative"})
     T.progressLabel=state:Label({Text="Progresso",Value="Andar — | wave —"})
