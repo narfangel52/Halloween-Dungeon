@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.17]",message)
+    print("[Nerfangel V3.18]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.17 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.18 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -643,6 +643,8 @@ local autoSellTab = Window:Tab({ Title = "Auto Sell", Icon = "shopping-cart", Co
 MW.AREAS = {"Beach", "Dark Forest", "Jungle", "Cave", "Grasslands"}
 MW.AREA_MAP_FILE = "PolyLoot_AreaSpawns_v1.json"
 MW.areaMarks = {}
+MW.farmSlots={}
+MW.onlyTwoSpawns=false
 MW.selectedArea = nil
 MW.selectedEnemyName = nil
 MW.lockedSpawn = nil
@@ -719,6 +721,7 @@ MW.areaDropdown=MW.selectionSection:Dropdown({
             if MW.setWorldFarmMode then MW.setWorldFarmMode("enemy",false) end
             MW.selectedArea=area
             MW.selectedEnemyName=nil
+            MW.farmSlots={};if MW.updateFarmSlotLabels then MW.updateFarmSlotLabels() end
             if MW.refreshAreaEnemies then MW.refreshAreaEnemies() end
         end
     end,
@@ -732,9 +735,24 @@ MW.enemyDropdown=MW.selectionSection:Dropdown({
         if enemy~=MW.selectedEnemyName then
             if MW.setWorldFarmMode then MW.setWorldFarmMode("enemy",false) end
             MW.selectedEnemyName=enemy
+            MW.farmSlots={};if MW.updateFarmSlotLabels then MW.updateFarmSlotLabels() end
         end
     end,
 })
+MW.slotLabels={}
+MW.selectionSection:Paragraph({Title="Dois pontos fixos (opcional)",
+    Content="Selecione a espécie. Fique perto do primeiro spawn e marque o ponto 1; repita no segundo. Depois ative Apenas dois pontos e o farm. A seleção vale nesta execução."})
+for slot=1,2 do
+    local index=slot
+    MW.slotLabels[index]=MW.selectionSection:Label({Text="Ponto "..index,Value="Não selecionado"})
+    MW.selectionSection:Button({Title="Marcar ponto "..index.." perto de mim",Icon="map-pin",
+        Callback=function() if MW.captureFarmSlot then MW.captureFarmSlot(index) end end})
+end
+MW.selectionSection:Button({Title="Limpar os dois pontos",Icon="eraser",Callback=function()
+    if MW.setWorldFarmMode then MW.setWorldFarmMode("enemy",false) end
+    MW.farmSlots={}
+    if MW.updateFarmSlotLabels then MW.updateFarmSlotLabels() end
+end})
 MW.controlSection=MW.worldTab:Section({Title="2 • Execução e movimento",Icon="sliders-horizontal"})
 MW.rotateEnemies=false
 MW.autoReposition=true
@@ -742,16 +760,34 @@ MW.repositionTimes=setmetatable({},{__mode="k"})
 MW.countedKills=setmetatable({},{__mode="k"})
 MW.regionalStepWait=0.25
 MW.rotationBlocked=setmetatable({},{__mode="k"})
-MW.controlSection:Toggle({
+MW.rotationToggle=MW.controlSection:Toggle({
     Title="Alternar monstros da região (XP)",
     Description="Seleciona outro vivo nos pontos mapeados até 600 studs do início. Aproximação por passos de até 20 studs, com piso e chegada verificados.",
     Icon="repeat",Default=false,Keybind=false,
     Callback=function(enabled)
         if MW.enemyFarmEnabled and MW.setWorldFarmMode then MW.setWorldFarmMode("enemy",false) end
-        MW.rotateEnemies=enabled
+        MW.rotateEnemies=enabled or MW.onlyTwoSpawns
+        if MW.onlyTwoSpawns and not enabled and MW.rotationToggle then
+            MW.rotationToggle:Set(true)
+        end
         MW.activeNPC=nil;MW.lastApproachedNPC=nil;MW.lockedSpawn=nil
         MW.rotationOrigin=nil
         MW.rotationBlocked=setmetatable({},{__mode="k"})
+    end,
+})
+MW.controlSection:Toggle({
+    Title="Apenas os dois pontos selecionados",
+    Description="Restringe o farm aos pontos 1 e 2. Se ambos estiverem mortos, aguarda. Farm de chefes fica indisponível neste modo.",
+    Default=false,Callback=function(enabled)
+        if MW.setWorldFarmMode then
+            MW.setWorldFarmMode("enemy",false)
+            if enabled and MW.bossFarmEnabled then MW.setWorldFarmMode("boss",false) end
+        end
+        MW.onlyTwoSpawns=enabled==true
+        if MW.onlyTwoSpawns then
+            MW.rotateEnemies=true
+            if MW.rotationToggle and not MW.rotationToggle:Get() then MW.rotationToggle:Set(true) end
+        end
     end,
 })
 MW.controlSection:Slider({
@@ -1527,16 +1563,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.17 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.18 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.17 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.18 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.17 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.18 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1547,7 +1583,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.17 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.18 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -4104,6 +4140,69 @@ function MW.isLockedNpc(npc)
         and math.abs(pos.Y-slot.pos.Y)<=20
 end
 
+function MW.updateFarmSlotLabels()
+    for index=1,2 do
+        local slot=MW.farmSlots[index]
+        if MW.slotLabels and MW.slotLabels[index] then
+            MW.slotLabels[index]:SetValue(slot and string.format("%s | X %.0f • Z %.0f",slot.animal,slot.pos.X,slot.pos.Z) or "Não selecionado")
+        end
+    end
+end
+
+function MW.captureFarmSlot(index)
+    if not MW.validArea(MW.selectedArea) or not MW.selectedEnemyName then
+        MW.worldStatusLabel:SetValue("Selecione a região e a espécie antes de marcar os pontos")
+        return false
+    end
+    local root=getRoot()
+    local folder=workspace:FindFirstChild("Animal_SpawnPoints")
+    if not root or not folder then return false end
+    local chosen,best
+    for _,part in ipairs(folder:GetChildren()) do
+        local key=MW.markerKey(part)
+        local mark=key and MW.areaMarks[key]
+        if mark and mark.area==MW.selectedArea and part:GetAttribute("Animal")==MW.selectedEnemyName then
+            local distance=horizontalDistance(root.Position,part.Position)
+            if distance<=65 and math.abs(root.Position.Y-part.Position.Y)<=60 and (not best or distance<best) then
+                chosen={key=key,part=part,pos=part.Position,marker=tostring(part:GetAttribute("_MarkerId") or ""),animal=MW.selectedEnemyName,area=MW.selectedArea}
+                best=distance
+            end
+        end
+    end
+    if not chosen then
+        MW.worldStatusLabel:SetValue("Nenhum ponto mapeado dessa espécie até 65 studs — aproxime-se ou faça o mapeamento")
+        return false
+    end
+    if chosen.marker=="" then
+        MW.worldStatusLabel:SetValue("Esse ponto não tem identificador de spawn; não foi selecionado")
+        return false
+    end
+    local other=MW.farmSlots[index==1 and 2 or 1]
+    if other and other.key==chosen.key then
+        MW.worldStatusLabel:SetValue("Esse ponto já está selecionado; aproxime-se de outro spawn")
+        return false
+    end
+    if other and horizontalDistance(other.pos,chosen.pos)>600 then
+        MW.worldStatusLabel:SetValue("Os dois pontos precisam estar a até 600 studs entre si")
+        return false
+    end
+    if MW.enemyFarmEnabled then MW.setWorldFarmMode("enemy",false) end
+    MW.farmSlots[index]=chosen
+    MW.activeNPC=nil;MW.detourRoute=nil
+    MW.updateFarmSlotLabels()
+    MW.worldStatusLabel:SetValue("Ponto "..index.." marcado para "..chosen.animal)
+    return true
+end
+
+function MW.selectedFarmPoint(key)
+    if not MW.onlyTwoSpawns then return true end
+    for index=1,2 do
+        local slot=MW.farmSlots[index]
+        if slot and slot.key==key and slot.area==MW.selectedArea and slot.animal==MW.selectedEnemyName then return true end
+    end
+    return false
+end
+
 function MW.rotationNpc()
     local live=workspace:FindFirstChild("Animal_Live")
     local folder=live and live:FindFirstChild("Aggressors")
@@ -4121,15 +4220,15 @@ function MW.rotationNpc()
     for _,part in ipairs(spawns:GetChildren()) do
         local key=MW.markerKey(part)
         local mark=key and MW.areaMarks[key]
-        if mark and mark.area==MW.selectedArea
+        if mark and mark.area==MW.selectedArea and MW.selectedFarmPoint(key)
             and part:GetAttribute("Animal")==MW.selectedEnemyName
             and horizontalDistance(origin,part.Position)<=600 then
-            table.insert(slots,{part=part,pos=part.Position,
+            table.insert(slots,{key=key,part=part,pos=part.Position,
                 marker=tostring(part:GetAttribute("_MarkerId") or ""),animal=MW.selectedEnemyName})
         end
     end
     MW.rotationMappedSlots=#slots
-    local best,bestSlot,bestDistance
+    local best,bestSlot,bestDistance,bestPriority
     for _,npc in ipairs(folder:GetChildren()) do
         local hp=npc:IsA("Model") and npc:GetAttribute("Health")
         local pos=type(hp)=="number" and hp>0 and enemyPosition(npc) or nil
@@ -4139,7 +4238,9 @@ function MW.rotationNpc()
             local marker=npc:GetAttribute("_SpawnMarkerId") or npc:GetAttribute("SpawnMarkerId")
             for _,slot in ipairs(slots) do
                 local matches
-                if marker~=nil and slot.marker~="" then
+                if MW.onlyTwoSpawns then
+                    matches=marker~=nil and slot.marker~="" and tostring(marker)==slot.marker
+                elseif marker~=nil and slot.marker~="" then
                     matches=tostring(marker)==slot.marker
                 else
                     matches=horizontalDistance(pos,slot.pos)<=25 and math.abs(pos.Y-slot.pos.Y)<=20
@@ -4147,8 +4248,9 @@ function MW.rotationNpc()
                 if matches then
                     if npc==MW.activeNPC then return npc end
                     local distance=horizontalDistance(root.Position,pos)
-                    if not bestDistance or distance<bestDistance then
-                        best,bestSlot,bestDistance=npc,slot,distance
+                    local priority=(MW.onlyTwoSpawns and slot.key~=MW.lastFarmSlotKey) and 0 or 1
+                    if not bestDistance or priority<bestPriority or (priority==bestPriority and distance<bestDistance) then
+                        best,bestSlot,bestDistance,bestPriority=npc,slot,distance,priority
                     end
                     break
                 end
@@ -4160,7 +4262,7 @@ function MW.rotationNpc()
         MW.targetRetryAt=0
         MW.lockedSpawn=bestSlot
         MW.lastApproachedNPC=nil
-        MW.worldTargetLabel:SetValue(MW.selectedEnemyName.." | rotação na região")
+        MW.worldTargetLabel:SetValue(MW.selectedEnemyName..(MW.onlyTwoSpawns and " | dois pontos fixos" or " | rotação na região"))
     end
     return best
 end
@@ -5047,6 +5149,7 @@ function MW.fight(npc,id)
         if type(hp)~="number" or hp<=0 then
             if type(hp)=="number" and hp<=0 and (hits>0 or attacks>0) and not MW.countedKills[npc] then
                 MW.countedKills[npc]=true
+                if MW.onlyTwoSpawns and MW.lockedSpawn then MW.lastFarmSlotKey=MW.lockedSpawn.key end
                 MW.worldDefeated+=1
                 MW.worldKillsLabel:SetValue(tostring(MW.worldDefeated))
                 MW.addLootOrigin(enemyPosition(npc) or MW.lockedSpawn.pos)
@@ -5194,7 +5297,7 @@ function MW.runFarm(id)
                     task.wait(0.10)
                 end
             else
-                MW.worldStatusLabel:SetValue(MW.rotateEnemies and "Sem alvo disponível nos pontos mapeados — aguardando" or "Waiting for respawn at locked spawn")
+                MW.worldStatusLabel:SetValue(MW.rotateEnemies and (MW.onlyTwoSpawns and "Aguardando respawn dos dois pontos selecionados" or "Sem alvo disponível nos pontos mapeados — aguardando") or "Waiting for respawn at locked spawn")
                 task.wait(0.25)
             end
         else
@@ -5252,6 +5355,17 @@ function MW.setWorldFarmMode(mode,enabled)
                 reject("Select Area and Enemy first")
                 return
             end
+            if MW.onlyTwoSpawns then
+                for index=1,2 do
+                    local slot=MW.farmSlots[index]
+                    if not slot or slot.area~=MW.selectedArea or slot.animal~=MW.selectedEnemyName then
+                        reject("Marque dois pontos distintos da espécie selecionada antes de iniciar")
+                        return
+                    end
+                end
+                MW.rotateEnemies=true
+                MW.lockedSpawn=MW.farmSlots[1]
+            end
             if not MW.lockedSpawn then
                 if not MW.lockNearestSpawn() then
                     reject("No matching spawn nearby; approach/capture area")
@@ -5262,6 +5376,7 @@ function MW.setWorldFarmMode(mode,enabled)
             MW.rotationBlocked=setmetatable({},{__mode="k"})
             MW.enemyFarmEnabled=true
         else
+            if MW.onlyTwoSpawns then reject("Desative Apenas os dois pontos antes de iniciar chefes");return end
             MW.bossFarmEnabled=true
             MW.bossRetryUntil=0
             MW.bossScanAt=0
@@ -5511,7 +5626,7 @@ do
     local diag=tab:Section({Title="Diagnóstico do hub e do farm",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.17 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.18 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5583,6 +5698,11 @@ do
                 if i>12 then break end
                 add("NPC "..npc.Name.." Health="..tostring(npc:GetAttribute("Health")).." Animal="..tostring(npc:GetAttribute("Animal")))
             end
+        end
+        add("FARM dois_pontos="..tostring(MW.onlyTwoSpawns))
+        for index=1,2 do
+            local slot=MW.farmSlots[index]
+            add("PONTO "..index.."="..tostring(slot and slot.key or "não selecionado"))
         end
         add("FARM alvo_fixo="..tostring(MW.activeNPC and MW.activeNPC.Name).." nova_tentativa="..string.format("%.1f",math.max(0,(MW.targetRetryAt or 0)-os.clock())))
         add("FARM mundo="..tostring(MW.worldFarmRunning).." inimigos="..tostring(MW.enemyFarmEnabled).." rotacao="..tostring(MW.rotateEnemies))
