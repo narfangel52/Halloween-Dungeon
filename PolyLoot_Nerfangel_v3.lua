@@ -187,12 +187,13 @@ PRO.darkEngine=nil
 PRO.sceneConnection=nil
 PRO.stallSeconds=120
 PRO.healthFloor=0
+PRO.doorWalkSpeed=24
 PRO.lastProgressAt=os.clock()
 PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.4]",message)
+    print("[Nerfangel V3.5]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -561,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.4 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.5 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1459,16 +1460,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.4 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.5 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.4 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.5 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.4 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.5 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1479,7 +1480,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.4 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.5 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -2583,7 +2584,7 @@ function PRO.walkDarkApproach(id,destination,roomIndex,parts)
     return false
 end
 
-function PRO.crossDarkDoor(id)
+function PRO.crossDarkDoorWalk(id)
     local door,assembly,parts=PRO.darkDoor()
     local root,humanoid,char=getRoot(),getHumanoid(),getCharacter()
     if not door or not root or not humanoid or not char or getNextEnemy() then return false end
@@ -2659,6 +2660,24 @@ function PRO.crossDarkDoor(id)
     stopMovement()
     PRO.log("Caminhada terminou sem nova sala confirmada; gere diagnóstico")
     return false
+end
+
+function PRO.crossDarkDoor(id)
+    local humanoid=getHumanoid()
+    if not humanoid or humanoid.Health<=0 or not validSession(id) then return false end
+    local original=humanoid.WalkSpeed
+    local requested=math.clamp(tonumber(PRO.doorWalkSpeed) or 24,16,40)
+    local applied=math.max(original,requested) -- never slow an already faster character
+    humanoid.WalkSpeed=applied
+    local ok,result=xpcall(function() return PRO.crossDarkDoorWalk(id) end,debug.traceback)
+    -- Restore on success, failure or cancellation. Do not overwrite a game-side speed change.
+    if humanoid.Parent and humanoid.WalkSpeed==applied then humanoid.WalkSpeed=original end
+    if not ok then
+        pcall(stopMovement)
+        PRO.log("Erro ao atravessar porta: "..tostring(result))
+        return false
+    end
+    return result
 end
 
 local function teleportThroughDoor(id)
@@ -4972,6 +4991,9 @@ do
         AS.enabled=false; AS.live=false
         PRO.log("Parada de todas as automações solicitada")
     end})
+    identity:Slider({Title="Velocidade mínima até a porta (studs/s)",Min=16,Max=40,Step=2,Default=24,
+        Description="Acelera apenas a aproximação e travessia. Depois restaura a velocidade anterior.",
+        Callback=function(v) PRO.doorWalkSpeed=math.clamp(tonumber(v) or 24,16,40) end})
     identity:Slider({Title="Parar sem progresso por segundos (0 = desligado)",Min=0,Max=300,Step=10,Default=120,
         Callback=function(v) PRO.stallSeconds=math.clamp(tonumber(v) or 120,0,300) end})
     identity:Slider({Title="Pausar combate abaixo de vida % (0 = desligado)",Min=0,Max=70,Step=5,Default=0,
@@ -4981,7 +5003,7 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.4 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.5 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
