@@ -1,4 +1,4 @@
-# Nerfangel Hub V3.4 — BETA
+# Nerfangel Hub V3.5 — BETA
 
 Preserves the existing v2 files. V3 is a separate experimental release, not a verified Dark Dungeon automation.
 
@@ -51,3 +51,7 @@ Per user feedback, replaces the diagonal approach glide with a teleport to the c
 User reported snapback immediately after the doorway-alignment teleport. Cause not proven. Removes all PivotTo/CFrame/velocity writes from Dark door traversal. Uses PathfindingService to reach the current-room alignment point, then ordinary Humanoid walking straight across. Two approach plans maximum, 30-second approach budget, per-waypoint timeouts, blocked-movement detection and three-second retry cooldown. Rejects approaches with waypoints outside the current room. Combat untouched. Isolated mocks cover successful navigation, wrong-room/closed-door/NoPath/cancellation and blocked navigation; live walking still requires verification.
 
 Reference: https://create.roblox.com/docs/characters/pathfinding
+
+
+## V3.5: temporary door walking speed
+Adds Nerfangel-tab slider 16–40 studs/s, default 24, applied during Dark approach/crossing only. Does not slow a character already faster. Restores the original speed on completion, cancellation and exceptions, except if the game changed the speed meanwhile. Does not force speed repeatedly when the game overrides it. Combat unchanged. Mock tests cover success, failure, cancellation and game-side changes; live speed behavior still requires testing.
