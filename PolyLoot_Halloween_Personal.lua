@@ -206,8 +206,10 @@ local function getWeapon()
     return fallback
 end
 
+local gui -- Shared forward declaration for session validation and UI initialization.
+
 local function validSession(id)
-    return running and sessionId == id and gui.Parent ~= nil
+    return running and sessionId == id and gui ~= nil and gui.Parent ~= nil
 end
 
 local function debugPrint(...)
@@ -234,7 +236,7 @@ if oldGui then oldGui:Destroy() end
 
 -- A lightweight lifecycle parent retained for the existing dungeon logic,
 -- and for target Highlights that were parented to the old ScreenGui.
-local gui = Instance.new("ScreenGui")
+gui = Instance.new("ScreenGui")
 gui.Name = "PolyLootDungeonV4"
 gui.ResetOnSpawn = false
 gui.Parent = playerGui
