@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.15]",message)
+    print("[Nerfangel V3.16]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.15 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.16 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -694,15 +694,14 @@ function MW.loadAreaMarkers()
 end
 MW.loadAreaMarkers()
 
-MW.selectionSection=MW.worldTab:Section({Title="Single Enemy Farm",Icon="target"})
+MW.selectionSection=MW.worldTab:Section({Title="Farm de XP • Região e alvo",Icon="target"})
 MW.selectionInfo=MW.selectionSection:Paragraph({
-    Title="One area. One enemy type. One spawn locked.",
-    Content="Choose an Area and Enemy, then stand near the spawn. "..
-        "The nearest spawn stays locked, except while a verified World Boss is active.",
+    Title="Escolha a região e a espécie",
+    Content="Selecione a região, escolha o monstro e ative o farm. A rotação mantém o alvo vivo até terminar o combate. Padrão de pausa entre passos: 0,25 s.",
     Icon="info"
 })
 MW.areaDropdown=MW.selectionSection:Dropdown({
-    Title="Area",
+    Title="Região",
     Values={
         {Title="Beach",Value="Beach"},
         {Title="Dark Forest",Value="Dark Forest"},
@@ -725,7 +724,7 @@ MW.areaDropdown=MW.selectionSection:Dropdown({
     end,
 })
 MW.enemyDropdown=MW.selectionSection:Dropdown({
-    Title="Enemy Name", Values={}, Multi=false, Search=true, AllowNone=true,
+    Title="Espécie do monstro", Values={}, Multi=false, Search=true, AllowNone=true,
     Placeholder="Choose an enemy in this area...",
     Callback=function(selection)
         if MW.worldUiRefreshing then return end
@@ -737,7 +736,7 @@ MW.enemyDropdown=MW.selectionSection:Dropdown({
     end,
 })
 MW.selectionSection:Button({
-    Title="Capture Nearby Spawns for Selected Area",
+    Title="Mapear pontos próximos da região",
     Description="Only needed if area mapping is missing. Stand within your area; capture nearby spawn markers.",
     Icon="map-pin",
     Callback=function()
@@ -745,12 +744,15 @@ MW.selectionSection:Button({
     end,
 })
 MW.selectionSection:Button({
-    Title="Refresh Enemy Names",
+    Title="Atualizar lista de monstros",
     Icon="refresh-cw",
     Callback=function() if MW.refreshAreaEnemies then MW.refreshAreaEnemies() end end,
 })
 MW.rotateEnemies=false
-MW.regionalStepWait=0.8
+MW.autoReposition=true
+MW.repositionTimes=setmetatable({},{__mode="k"})
+MW.countedKills=setmetatable({},{__mode="k"})
+MW.regionalStepWait=0.25
 MW.rotationBlocked=setmetatable({},{__mode="k"})
 MW.worldTab:Module({
     Title="Alternar monstros da região (XP)",
@@ -766,12 +768,17 @@ MW.worldTab:Module({
 })
 MW.selectionSection:Slider({
     Title="Pausa entre passos de teleporte (s)",
-    Min=0.1,Max=1.2,Default=0.8,Step=0.05,
-    Callback=function(value) MW.regionalStepWait=math.clamp(tonumber(value) or 0.8,0.1,1.2) end,
+    Min=0.1,Max=1.2,Default=0.25,Step=0.05,
+    Callback=function(value) MW.regionalStepWait=math.clamp(tonumber(value) or 0.25,0.1,1.2) end,
+})
+MW.selectionSection:Toggle({
+    Title="Reposicionar quando os ataques não causarem dano",
+    Description="Após 6 s sem redução de vida, tenta o lado oposto do mesmo alvo com piso e espaço livres. Intervalo mínimo: 8 s.",
+    Default=true,Callback=function(value) MW.autoReposition=value==true end,
 })
 MW.worldEnemiesModule=MW.worldTab:Module({
-    Title="Auto Farm Single Enemy",
-    Description="Lock one spawn marker, defeat its NPC, collect loot and wait for its respawn.",
+    Title="Ativar farm de monstros",
+    Description="Ative a rotação para alternar entre os monstros. Com a rotação desligada, permanece no mesmo ponto.",
     Icon="swords", Default=false, Keybind=false,
     Callback=function(enabled)
         if MW.onWorldFarmToggle then MW.onWorldFarmToggle("enemy",enabled) end
@@ -779,10 +786,10 @@ MW.worldEnemiesModule=MW.worldTab:Module({
 })
 -- World Boss controls. Existing combat scheduling is unchanged.
 -- Boss names are dynamically discovered from explicit boss NPC metadata/folders.
-MW.bossSection=MW.worldTab:Section({Title="World Boss",Icon="crown"})
+MW.bossSection=MW.worldTab:Section({Title="Chefes do mundo",Icon="crown"})
 MW.bossDropdown=MW.bossSection:Dropdown({
-    Title="World Boss",
-    Values={{Title="Any detected World Boss",Value="__any_boss"}},
+    Title="Chefes do mundo",
+    Values={{Title="Qualquer chefe detectado",Value="__any_boss"}},
     Default="__any_boss",Multi=false,Search=true,AllowNone=false,
     Placeholder="Choose boss or Any detected Boss",
     Callback=function(selection)
@@ -947,17 +954,20 @@ function MW.showSelectedBossSignTimer()
     end
 end
 
-MW.worldTab:Section({Title="Loot",Icon="package"}):Toggle({
-    Title="Auto Collect Loot",
+MW.worldTab:Section({Title="Coleta de itens",Icon="package"}):Toggle({
+    Title="Coletar itens após derrotar o alvo",
     Description="Collect drops from the locked enemy only.",
     Default=true,
     Callback=function(value) MW.worldAutoLoot=value==true end,
 })
-MW.worldStatusSection=MW.worldTab:Section({Title="Single Farm Status",Icon="activity"})
+MW.worldStatusSection=MW.worldTab:Section({Title="Acompanhamento do farm",Icon="activity"})
 MW.worldStatusLabel=MW.worldStatusSection:Label({Text="Status",Value="Choose area + enemy"})
-MW.worldTargetLabel=MW.worldStatusSection:Label({Text="Locked spawn",Value="-"})
-MW.worldKillsLabel=MW.worldStatusSection:Label({Text="Defeated",Value="0"})
-MW.worldAttackLabel=MW.worldStatusSection:Label({Text="Attacks",Value="0"})
+MW.worldTargetLabel=MW.worldStatusSection:Label({Text="Alvo atual",Value="-"})
+MW.worldKillsLabel=MW.worldStatusSection:Label({Text="Derrotas observadas",Value="0"})
+MW.worldAttackLabel=MW.worldStatusSection:Label({Text="Ataques solicitados",Value="0"})
+MW.worldHealthLabel=MW.worldStatusSection:Label({Text="Vida e distância do alvo",Value="Sem alvo"})
+MW.worldPaceLabel=MW.worldStatusSection:Label({Text="Derrotas por minuto de farm",Value="0,0"})
+
 
 
 -- ================================================================
@@ -1480,16 +1490,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.15 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.16 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.15 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.16 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.15 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.16 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1500,7 +1510,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.15 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.16 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -4294,9 +4304,9 @@ function MW.regionalSteps(npc,id)
         if math.abs(heightDelta)>8 then
             PRO.log("Farm XP: desnível de "..math.floor(heightDelta).." studs; ponto superior/inferior validado")
         end
-        local untilTime=os.clock()+(MW.regionalStepWait or 0.8)
+        local untilTime=os.clock()+(MW.regionalStepWait or 0.25)
         repeat
-            task.wait(math.min(0.05,MW.regionalStepWait or 0.8))
+            task.wait(math.min(0.05,MW.regionalStepWait or 0.25))
             if not MW.worldFarmValid(id) or getCharacter()~=character then return false end
             root=getRoot()
             if not root or horizontalDistance(root.Position,point)>6 or math.abs(root.Position.Y-point.Y)>8 then
@@ -4588,7 +4598,7 @@ function MW.refreshBossList(force)
     local signature=table.concat(names,"|")
     if not force and signature==MW.lastBossSignature then return end
     MW.lastBossSignature=signature
-    local values={{Title="Any detected World Boss",Value="__any_boss"}}
+    local values={{Title="Qualquer chefe detectado",Value="__any_boss"}}
     for _,name in ipairs(names) do
         table.insert(values,{Title=name,Value=name})
     end
@@ -4847,6 +4857,49 @@ function MW.fightBoss(npc,id)
     return false
 end
 
+-- Only recover the current live target. Never change target or force a position.
+function MW.repositionTarget(npc,id)
+    if not MW.autoReposition or not MW.rotateEnemies or MW.activeNPC~=npc
+        or os.clock()-(MW.repositionTimes[npc] or -1e9)<8 then return false end
+    local char,root,hum=getCharacter(),getRoot(),getHumanoid()
+    local pos=enemyPosition(npc)
+    local hp=npc.Parent and npc:GetAttribute("Health")
+    if not MW.worldFarmValid(id) or not char or not root or not hum or hum.Health<=0
+        or not pos or type(hp)~="number" or hp<=0 or horizontalDistance(root.Position,pos)>16 then return false end
+    MW.repositionTimes[npc]=os.clock()
+    local outward=Vector3.new(root.Position.X-pos.X,0,root.Position.Z-pos.Z)
+    if outward.Magnitude<0.1 then outward=Vector3.new(1,0,0) end
+    outward=outward.Unit
+    local side=Vector3.new(-outward.Z,0,outward.X)
+    local overlap=OverlapParams.new()
+    overlap.FilterType=Enum.RaycastFilterType.Exclude
+    overlap.FilterDescendantsInstances={char,npc};overlap.RespectCanCollide=true
+    for _,direction in ipairs({-outward,side,-side}) do
+        local probe=pos+direction*3.3
+        local ground=MW.regionalGroundAt(probe,root.Position.Y,npc)
+        if ground then
+            local point=Vector3.new(probe.X,ground.Y+3.2,probe.Z)
+            if math.abs(point.Y-pos.Y)<=8 and (point-root.Position).Magnitude<=24
+                and MW.regionalLandingClear(point,overlap) then
+                if not MW.worldFarmValid(id) or MW.activeNPC~=npc or getCharacter()~=char then return false end
+                hum:MoveTo(root.Position)
+                char:PivotTo(CFrame.lookAt(point,Vector3.new(pos.X,point.Y,pos.Z)))
+                task.wait(MW.regionalStepWait or 0.25)
+                root=getRoot();pos=enemyPosition(npc)
+                if MW.worldFarmValid(id) and getCharacter()==char and root and pos
+                    and horizontalDistance(root.Position,pos)<=5.5 and math.abs(root.Position.Y-pos.Y)<=8 then
+                    PRO.log("Farm XP: reposicionado para outro lado do mesmo alvo "..npc.Name)
+                    return true
+                end
+                PRO.log("Farm XP: reposicionamento não confirmado; mantendo o alvo")
+                return false
+            end
+        end
+    end
+    PRO.log("Farm XP: reposicionamento sem piso/altura livres; mantendo o alvo")
+    return false
+end
+
 function MW.fight(npc,id)
     if not MW.worldFarmValid(id) or not npc or not npc.Parent then return end
     -- ONE fixed NPC instance per respawn. No target rotation and no combat re-teleport.
@@ -4867,6 +4920,7 @@ function MW.fight(npc,id)
     if type(hp0)~="number" or hp0<=0 then return end
     local prevHp=hp0
     local lastHit=os.clock()
+    local lastRecovery=-math.huge
     local nextAttack=0
     local nextMove=0
     local hits=0
@@ -4878,9 +4932,10 @@ function MW.fight(npc,id)
             print("[WORLD][BOSS] PREEMPT_SINGLE_ENEMY")
             return
         end
-        local hp=npc.Parent and npc:GetAttribute("Health") or 0
+        local hp=npc:GetAttribute("Health")
         if type(hp)~="number" or hp<=0 then
-            if hits>0 or attacks>0 then
+            if type(hp)=="number" and hp<=0 and (hits>0 or attacks>0) and not MW.countedKills[npc] then
+                MW.countedKills[npc]=true
                 MW.worldDefeated+=1
                 MW.worldKillsLabel:SetValue(tostring(MW.worldDefeated))
                 MW.addLootOrigin(enemyPosition(npc) or MW.lockedSpawn.pos)
@@ -4892,6 +4947,7 @@ function MW.fight(npc,id)
             end
             return
         end
+        if not npc.Parent then return end
         if hp<prevHp then
             hits+=1
             lastHit=os.clock()
@@ -4910,6 +4966,14 @@ function MW.fight(npc,id)
             if not root then return end
             flat=horizontalDistance(root.Position,pos)
             vert=math.abs(root.Position.Y-pos.Y)
+        end
+        if MW.rotateEnemies and os.clock()-math.max(lastHit,lastRecovery)>=6 and (attacks>=3 or vert>8) then
+            if MW.repositionTarget(npc,id) then
+                lastRecovery=os.clock() -- recovery grace; lastHit still measures real HP changes
+                prevHp=npc:GetAttribute("Health") or prevHp
+                nextMove=os.clock()+0.6
+                continue
+            end
         end
         if MW.rotateEnemies and (flat>16 or vert>16) then
             MW.targetRetryAt=os.clock()+3
@@ -4953,7 +5017,7 @@ function MW.fight(npc,id)
                 nextMove=os.clock()+1.5
             end
         end
-        if MW.rotateEnemies and os.clock()-lastHit>15 then
+        if MW.rotateEnemies and os.clock()-math.max(lastHit,lastRecovery)>15 then
             MW.targetRetryAt=os.clock()+3
             MW.lastApproachedNPC=nil
             MW.worldStatusLabel:SetValue("Sem dano confirmado — mantendo alvo para reposicionar")
@@ -5029,6 +5093,12 @@ function MW.runFarm(id)
 end
 
 function MW.stopWorldFarm()
+    if MW.worldFarmStartedAt then
+        MW.worldFarmSeconds=(MW.worldFarmSeconds or 0)+os.clock()-MW.worldFarmStartedAt
+        MW.worldFarmStartedAt=nil
+    end
+    local root,hum=getRoot(),getHumanoid()
+    if root and hum then pcall(function() hum:MoveTo(root.Position) end) end
     MW.enemyFarmEnabled=false
     MW.bossFarmEnabled=false
     MW.bossActive=false
@@ -5105,6 +5175,7 @@ function MW.setWorldFarmMode(mode,enabled)
         MW.dropAttempts={}
         MW.worldFarmSession+=1
         MW.worldFarmRunning=true
+        MW.worldFarmStartedAt=os.clock()
         local weapon=getWeapon()
         MW.preferredWeaponName=weapon and weapon.Name or MW.preferredWeaponName
         local id=MW.worldFarmSession
@@ -5270,6 +5341,19 @@ task.spawn(function()
             onSpeedrunToggle(false)
             statusLabel.Text="Limite de tempo atingido"
         end
+        pcall(function()
+            local npc=MW.activeNPC
+            local root=getRoot()
+            local pos=npc and npc.Parent and enemyPosition(npc)
+            local hp=npc and npc:GetAttribute("Health")
+            local detail="Sem alvo"
+            if root and pos and type(hp)=="number" then
+                detail=string.format("HP %.0f | %.1f studs | altura %.1f",math.max(0,hp),horizontalDistance(root.Position,pos),math.abs(root.Position.Y-pos.Y))
+            end
+            MW.worldHealthLabel:SetValue(detail)
+            local elapsed=(MW.worldFarmSeconds or 0)+(MW.worldFarmStartedAt and os.clock()-MW.worldFarmStartedAt or 0)
+            MW.worldPaceLabel:SetValue(string.format("%.1f",elapsed>0 and MW.worldDefeated*60/elapsed or 0))
+        end)
         local values={PRO.finished,PRO.duration(os.clock()-PRO.startedAt),
             PRO.runStartedAt and running and PRO.duration(os.clock()-PRO.runStartedAt) or "—",
             PRO.duration(PRO.lastSeconds),PRO.duration(PRO.finished>0 and PRO.totalSeconds/PRO.finished or 0),
@@ -5308,10 +5392,10 @@ do
         Callback=function(v) PRO.healthFloor=math.clamp(tonumber(v) or 0,0,70) end})
     identity:Toggle({Title="Mostrar logs detalhados no F9",Default=true,
         Callback=function(v) CFG.DEBUG_MODE=v==true end})
-    local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
+    local diag=tab:Section({Title="Diagnóstico do hub e do farm",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.15 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.16 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5421,6 +5505,7 @@ do
         diagLabel:SetValue(ok and (result and "Estrutura compatível. Adaptador ainda exige teste no jogo." or tostring(reason)) or tostring(result))
     end})
 end
+
 
 
 
