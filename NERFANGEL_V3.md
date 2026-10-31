@@ -1,4 +1,4 @@
-# Nerfangel Hub V3.3 — BETA
+# Nerfangel Hub V3.4 — BETA
 
 Preserves the existing v2 files. V3 is a separate experimental release, not a verified Dark Dungeon automation.
 
@@ -45,3 +45,9 @@ Tests: isolated Door-group tests reject fake doors, closed pieces and the final 
 
 ## V3.3: align, then walk
 Per user feedback, replaces the diagonal approach glide with a teleport to the current-room side of the doorway, followed by Humanoid:MoveTo straight through. Prefers the stationary DoorThreshold anchor, falling back to DoorWood. Checks floor on both endpoints and the current room at the approach point, validates accepted alignment and stops blocked walking. Combat code unchanged. Isolated geometry tested for four orientations and both player sides; no live traversal test claimed.
+
+
+## V3.4: approach entirely on foot
+User reported snapback immediately after the doorway-alignment teleport. Cause not proven. Removes all PivotTo/CFrame/velocity writes from Dark door traversal. Uses PathfindingService to reach the current-room alignment point, then ordinary Humanoid walking straight across. Two approach plans maximum, 30-second approach budget, per-waypoint timeouts, blocked-movement detection and three-second retry cooldown. Rejects approaches with waypoints outside the current room. Combat untouched. Isolated mocks cover successful navigation, wrong-room/closed-door/NoPath/cancellation and blocked navigation; live walking still requires verification.
+
+Reference: https://create.roblox.com/docs/characters/pathfinding
