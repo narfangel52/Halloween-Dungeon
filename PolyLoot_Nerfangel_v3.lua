@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.7]",message)
+    print("[Nerfangel V3.8]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.7 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.8 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -748,6 +748,20 @@ MW.selectionSection:Button({
     Title="Refresh Enemy Names",
     Icon="refresh-cw",
     Callback=function() if MW.refreshAreaEnemies then MW.refreshAreaEnemies() end end,
+})
+MW.rotateEnemies=false
+MW.rotationBlocked=setmetatable({},{__mode="k"})
+MW.worldTab:Module({
+    Title="Alternar monstros da região (XP)",
+    Description="Após derrotar o alvo, procura outro vivo da espécie selecionada nos pontos mapeados da região (até 600 studs do início).",
+    Icon="repeat",Default=false,Keybind=false,
+    Callback=function(enabled)
+        if MW.enemyFarmEnabled and MW.setWorldFarmMode then MW.setWorldFarmMode("enemy",false) end
+        MW.rotateEnemies=enabled
+        MW.activeNPC=nil;MW.lastApproachedNPC=nil;MW.lockedSpawn=nil
+        MW.rotationOrigin=nil
+        MW.rotationBlocked=setmetatable({},{__mode="k"})
+    end,
 })
 MW.worldEnemiesModule=MW.worldTab:Module({
     Title="Auto Farm Single Enemy",
@@ -1460,16 +1474,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.7 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.8 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.7 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.8 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.7 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.8 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1480,7 +1494,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.7 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.8 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -4034,7 +4048,62 @@ function MW.isLockedNpc(npc)
         and math.abs(pos.Y-slot.pos.Y)<=20
 end
 
+function MW.rotationNpc()
+    local live=workspace:FindFirstChild("Animal_Live")
+    local folder=live and live:FindFirstChild("Aggressors")
+    local root=getRoot()
+    local spawns=workspace:FindFirstChild("Animal_SpawnPoints")
+    if not folder or not root or not spawns then return nil end
+    local origin=MW.rotationOrigin or root.Position
+    MW.rotationOrigin=origin
+    local slots={}
+    for _,part in ipairs(spawns:GetChildren()) do
+        local key=MW.markerKey(part)
+        local mark=key and MW.areaMarks[key]
+        if mark and mark.area==MW.selectedArea
+            and part:GetAttribute("Animal")==MW.selectedEnemyName
+            and horizontalDistance(origin,part.Position)<=600 then
+            table.insert(slots,{part=part,pos=part.Position,
+                marker=tostring(part:GetAttribute("_MarkerId") or ""),animal=MW.selectedEnemyName})
+        end
+    end
+    local best,bestSlot,bestDistance
+    for _,npc in ipairs(folder:GetChildren()) do
+        local hp=npc:IsA("Model") and npc:GetAttribute("Health")
+        local pos=type(hp)=="number" and hp>0 and enemyPosition(npc) or nil
+        if pos and npc:GetAttribute("Animal")==MW.selectedEnemyName
+            and horizontalDistance(origin,pos)<=600
+            and (MW.rotationBlocked[npc] or 0)<=os.clock() then
+            local marker=npc:GetAttribute("_SpawnMarkerId") or npc:GetAttribute("SpawnMarkerId")
+            for _,slot in ipairs(slots) do
+                local matches
+                if marker~=nil and slot.marker~="" then
+                    matches=tostring(marker)==slot.marker
+                else
+                    matches=horizontalDistance(pos,slot.pos)<=25 and math.abs(pos.Y-slot.pos.Y)<=20
+                end
+                if matches then
+                    if npc==MW.activeNPC then return npc end
+                    local distance=horizontalDistance(root.Position,pos)
+                    if not bestDistance or distance<bestDistance then
+                        best,bestSlot,bestDistance=npc,slot,distance
+                    end
+                    break
+                end
+            end
+        end
+    end
+    MW.activeNPC=best
+    if best then
+        MW.lockedSpawn=bestSlot
+        MW.lastApproachedNPC=nil
+        MW.worldTargetLabel:SetValue(MW.selectedEnemyName.." | rotação na região")
+    end
+    return best
+end
+
 function MW.currentNpc()
+    if MW.rotateEnemies then return MW.rotationNpc() end
     local folder=getEnemies()
     if not folder then return nil end
     -- Keep the live instance until it dies: never switch NPCs mid-combat.
@@ -4129,11 +4198,11 @@ function MW.approachOnce(npc,id)
         if flat<=7 then MW.shortStep(npc,id) end
         return flat<=7
     end
-    MW.lastApproachedNPC=npc
-    if flat>35 then
+    if flat>(MW.rotateEnemies and 650 or 35) then
         MW.worldStatusLabel:SetValue("Move closer to locked NPC ("..math.floor(flat).." studs)")
         return false
     end
+    MW.lastApproachedNPC=npc
     if flat>6 then
         -- One bounded teleport on acquisition of THIS respawn, never mid-combat.
         local outward=Vector3.new(root.Position.X-pos.X,0,root.Position.Z-pos.Z)
@@ -4658,8 +4727,12 @@ end
 function MW.fight(npc,id)
     if not MW.worldFarmValid(id) or not npc or not npc.Parent then return end
     -- ONE fixed NPC instance per respawn. No target rotation and no combat re-teleport.
-    MW.worldStatusLabel:SetValue("Fighting "..MW.selectedEnemyName.." (one spawn)")
+    MW.worldStatusLabel:SetValue("Fighting "..MW.selectedEnemyName..(MW.rotateEnemies and " (rotação XP)" or " (one spawn)"))
     if not MW.approachOnce(npc,id) then
+        if MW.rotateEnemies then
+            MW.rotationBlocked[npc]=os.clock()+12
+            MW.activeNPC=nil;MW.lastApproachedNPC=nil
+        end
         task.wait(0.35)
         return
     end
@@ -4701,7 +4774,7 @@ function MW.fight(npc,id)
         local root=getRoot()
         local pos=enemyPosition(npc)
         local hum=getHumanoid()
-        if not root or not pos or not hum then return end
+        if not root or not pos or not hum or hum.Health<=0 then return end
         local flat=horizontalDistance(root.Position,pos)
         local vert=math.abs(root.Position.Y-pos.Y)
         if MW.worldAutoLoot and MW.findLoot() then
@@ -4746,6 +4819,12 @@ function MW.fight(npc,id)
                 nextMove=os.clock()+1.5
             end
         end
+        if MW.rotateEnemies and os.clock()-lastHit>15 then
+            MW.rotationBlocked[npc]=os.clock()+15
+            MW.activeNPC=nil;MW.lastApproachedNPC=nil
+            MW.worldStatusLabel:SetValue("Alvo sem dano confirmado; procurando outro")
+            return
+        end
         if os.clock()-MW.lastCombatLog>5 then
             MW.lastCombatLog=os.clock()
             debugPrint("[WORLD][SINGLE] LOCKED",MW.selectedEnemyName,
@@ -4759,6 +4838,16 @@ end
 function MW.runFarm(id)
     print("[WORLD][CTRL] START", "enemy",MW.enemyFarmEnabled,"boss",MW.bossFarmEnabled)
     while MW.worldFarmValid(id) do
+        local character,hum=getCharacter(),getHumanoid()
+        if not character or not getRoot() or not hum or hum.Health<=0 then
+            MW.lastApproachedNPC=nil;MW.activeNPC=nil
+            task.wait(0.4)
+            continue
+        end
+        if MW.farmCharacter~=character then
+            MW.farmCharacter=character
+            MW.lastApproachedNPC=nil;MW.activeNPC=nil
+        end
         -- Boss has absolute movement/combat priority. There is only ONE
         -- controller coroutine, so normal and boss movement never overlap.
         local boss=MW.bossFarmEnabled and MW.availableBoss() or nil
@@ -4775,7 +4864,7 @@ function MW.runFarm(id)
             -- prevent restarting after the boss moved the player away.
             MW.lastApproachedNPC=nil
             if MW.enemyFarmEnabled and MW.lockedSpawn then
-                MW.returnToLockedSpawn()
+                if not MW.rotateEnemies then MW.returnToLockedSpawn() end
                 MW.worldStatusLabel:SetValue("Resuming single enemy farm")
             end
             task.wait(0.2)
@@ -4793,7 +4882,7 @@ function MW.runFarm(id)
                     task.wait(0.10)
                 end
             else
-                MW.worldStatusLabel:SetValue("Waiting for respawn at locked spawn")
+                MW.worldStatusLabel:SetValue(MW.rotateEnemies and "Sem alvos vivos mapeados na região — aguardando" or "Waiting for respawn at locked spawn")
                 task.wait(0.25)
             end
         else
@@ -4850,6 +4939,8 @@ function MW.setWorldFarmMode(mode,enabled)
                     return
                 end
             end
+            MW.rotationOrigin=getRoot() and getRoot().Position or nil
+            MW.rotationBlocked=setmetatable({},{__mode="k"})
             MW.enemyFarmEnabled=true
         else
             MW.bossFarmEnabled=true
@@ -5086,7 +5177,7 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.7 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.8 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5178,3 +5269,4 @@ do
         diagLabel:SetValue(ok and (result and "Estrutura compatível. Adaptador ainda exige teste no jogo." or tostring(reason)) or tostring(result))
     end})
 end
+
