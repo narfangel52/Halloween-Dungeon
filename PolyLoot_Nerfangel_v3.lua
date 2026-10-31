@@ -192,7 +192,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.1]",message)
+    print("[Nerfangel V3.2]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -228,6 +228,7 @@ function PRO.floorRun(root,containers)
 end
 function PRO.refreshDarkRoom()
     if PRO.dungeonId~="dark" or not PRO.darkChain or not PRO.darkChain.Parent then return end
+    if PRO.sceneRoom then return end -- observed server room wins over floor inference
     local now=os.clock()
     if now<(PRO.nextRoomProbe or 0) then return end
     PRO.nextRoomProbe=now+0.4
@@ -560,7 +561,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.1 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.2 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1458,16 +1459,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.1 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.2 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.1 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.2 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.1 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.2 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1478,7 +1479,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.1 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.2 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -1762,6 +1763,26 @@ local function installSceneReplayListener()
                     info=table.concat(fields,",")
                 end
                 PRO.log("Scene Dark: "..tostring(action).." "..info)
+                if type(data)=="table" then
+                    local index=tonumber(data.index or data.room)
+                    if action=="room" and index and index>=1 and index<=PRO.roomCount then
+                        PRO.sceneRoom=index; currentRoom=index
+                        currentWave=0; totalWaves=tonumber(data.waves) or 0
+                        PRO.darkUnlocked=nil; roomCleared=false
+                        PRO.lastProgressAt=os.clock();clearPendingDoor()
+                    elseif action=="wave" and tonumber(data.room)==currentRoom then
+                        currentWave=tonumber(data.wave) or currentWave
+                        totalWaves=tonumber(data.waves) or totalWaves
+                        roomCleared=false;PRO.darkUnlocked=nil;PRO.lastProgressAt=os.clock()
+                    elseif action=="cleared" and index==currentRoom then
+                        roomCleared=true; PRO.lastProgressAt=os.clock()
+                    elseif action=="unlock" and index==currentRoom then
+                        PRO.darkUnlocked=index;PRO.darkYaw=tonumber(data.yaw)
+                        roomCleared=true;PRO.lastProgressAt=os.clock()
+                    elseif action=="slam" then
+                        PRO.darkUnlocked=nil
+                    end
+                end
             end
             -- Diagnostic only: compare server gate timing with the delayed
             -- room popup. Gate signals alone do NOT prove room entry.
@@ -1825,6 +1846,7 @@ local function installSceneReplayListener()
 end
 
 PRO.rebindScene=function()
+    PRO.sceneRoom=nil; PRO.darkUnlocked=nil
     clearSceneReplay()
     sceneEventsAvailable=installSceneReplayListener()
 end
@@ -2012,7 +2034,8 @@ local function getNextEnemy()
                     local params=RaycastParams.new()
                     params.FilterType=Enum.RaycastFilterType.Include
                     params.FilterDescendantsInstances={chain}
-                    if not workspace:Raycast(position+Vector3.new(0,8,0),Vector3.new(0,-40,0),params) then continue end
+                    local _,enemyRoom=PRO.floorRun({Position=position},{chain})
+                    if not enemyRoom or enemyRoom~=currentRoom then continue end
                 end
                 local distance =
                     horizontalDistance(
@@ -2198,6 +2221,7 @@ local function fightEnemy(enemy, id)
     local lastDamage = os.clock()
     local oldHealth = enemy:GetAttribute("Health")
     local attackPauseUntil = 0
+    local nextCombatLog=0
     debugPrint("Kampf gestartet:", enemy.Name)
 -- Einmal zum ersten Ziel teleportieren
     teleportToEnemy(enemy)
@@ -2246,6 +2270,12 @@ local function fightEnemy(enemy, id)
         end
         local distance =
             horizontalDistance(root.Position, position)
+        if PRO.dungeonId=="dark" and now>=nextCombatLog then
+            nextCombatLog=now+3
+            PRO.log(string.format("COMBATE alvo=%s arma=%s habilitada=%s HP=%.1f distXZ=%.1f altura=%.1f ataques=%d semDano=%.1fs",
+                enemy.Name,weapon.Name,tostring(weapon.Enabled),hp,distance,
+                math.abs(root.Position.Y-position.Y),attackCount,now-lastDamage))
+        end
 -- Position nur bei Bedarf korrigieren.-- Keine Korrektur direkt waehrend Angriffspause.
         if now >= attackPauseUntil
             and now - lastTeleport >= CFG.REPOSITION_INTERVAL
@@ -2306,7 +2336,33 @@ end
 
 -- ============================================
 
+-- Only the exact current-room Door group is eligible: never EntrySeal or DoorFAKE.
+
+function PRO.darkDoor()
+    local chain=getDungeon()
+    if not chain or currentRoom<1 or currentRoom>=PRO.roomCount then return nil end
+    -- All physical Door pieces being non-collidable also allows late-starting in an already-cleared room.
+    for _,room in ipairs(chain:GetChildren()) do
+        if PRO.roomNumber(room.Name)==currentRoom then
+            local assembly=room:FindFirstChild("Door")
+            if not assembly then return nil end
+            local parts={}
+            if assembly:IsA("BasePart") then table.insert(parts,assembly) end
+            for _,part in ipairs(assembly:GetDescendants()) do
+                if part:IsA("BasePart") then table.insert(parts,part) end
+            end
+            if #parts==0 then return nil end
+            for _,part in ipairs(parts) do if part.CanCollide then return nil end end
+            local representative=parts[1]
+            for _,part in ipairs(parts) do if part.Name=="DoorWood" then representative=part;break end end
+            return representative,assembly,parts
+        end
+    end
+    return nil
+end
+
 local function getOpenDoor()
+    if PRO.dungeonId=="dark" then return PRO.darkDoor() end
     local dungeonFolder = getDungeon()
     local root = getRoot()
     if not dungeonFolder or not root
@@ -2448,7 +2504,61 @@ end
 -- continuously monitor the door side and wait for the popup as long as the
 -- character remains in the new room. Retry on confirmed rollback only.
 -- Bounded to 3 attempts per transition, with no new remote calls.
+
+function PRO.crossDarkDoor(id)
+    local door,assembly,parts=PRO.darkDoor()
+    local root=getRoot()
+    if not door or not root or getNextEnemy() then return false end
+    local before=currentRoom
+    local boxCF,boxSize
+    if assembly:IsA("Model") then
+        boxCF,boxSize=assembly:GetBoundingBox()
+    else
+        boxCF,boxSize=door.CFrame,door.Size
+    end
+    -- Cross perpendicular to the door plane; pick the side opposite the player.
+    local normal=boxSize.X<boxSize.Z and boxCF.RightVector or boxCF.LookVector
+    normal=Vector3.new(normal.X,0,normal.Z)
+    if normal.Magnitude<0.1 then return false end
+    normal=normal.Unit
+    local center=Vector3.new(boxCF.Position.X,root.Position.Y,boxCF.Position.Z)
+    if (root.Position-center):Dot(normal)>0 then normal=-normal end
+    local thickness=math.min(boxSize.X,boxSize.Z)
+    local near=center-normal*(thickness/2+5)
+    local far=center+normal*(thickness/2+8)
+    PRO.log("Avanço Dark "..before.." -> "..(before+1).." por "..assembly:GetFullName())
+    statusLabel.Text="Atravessando a porta aberta da sala "..before
+    local started=os.clock()
+    for _,destination in ipairs({near,far}) do
+        while validSession(id) and currentRoom==before and os.clock()-started<12 do
+            local char=getCharacter();root=getRoot()
+            if not char or not root or not assembly.Parent then return false end
+            for _,part in ipairs(parts) do if part.Parent and part.CanCollide then return false end end
+            local delta=destination-root.Position
+            delta=Vector3.new(delta.X,0,delta.Z)
+            if delta.Magnitude<0.7 then break end
+            local dt=RunService.Heartbeat:Wait()
+            if not validSession(id) then return false end
+            local position=root.Position+delta.Unit*math.min(delta.Magnitude,40*math.min(dt,0.08))
+            local safe=dungeonSafeDestination(position)
+            if not safe then PRO.log("Avanço Dark interrompido: piso não confirmado");return false end
+            char:PivotTo(CFrame.lookAt(safe,safe+normal))
+        end
+        if currentRoom>before then break end
+    end
+    local untilTime=os.clock()+3
+    while validSession(id) and currentRoom==before and os.clock()<untilTime do task.wait(0.1) end
+    if currentRoom>before then
+        usedDoors[door]=true;clearPendingDoor();PRO.lastProgressAt=os.clock()
+        PRO.log("Avanço Dark confirmado pelo jogo: sala "..currentRoom)
+        return true
+    end
+    PRO.log("Porta atravessada sem nova sala confirmada; veja diagnóstico")
+    return false
+end
+
 local function teleportThroughDoor(id)
+    if PRO.dungeonId=="dark" then return PRO.crossDarkDoor(id) end
     if not validSession(id) or currentRoom <= 0 or currentRoom >= PRO.roomCount then
         return false
     end
@@ -4767,7 +4877,7 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.1 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.2 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -4776,6 +4886,12 @@ do
             for runIndex,run in ipairs(runs:GetChildren()) do
                 if runIndex>8 then break end
                 add("RUN "..run:GetFullName())
+                for _,room in ipairs(run:GetChildren()) do
+                    if PRO.roomNumber(room.Name) then
+                        local door=room:FindFirstChild("Door")
+                        add("SAIDA "..room.Name.."="..(door and (door.ClassName.." "..door:GetFullName()) or "ausente"))
+                    end
+                end
                 for key,value in pairs(run:GetAttributes()) do
                     if type(value)~="table" then add("ATRIBUTO RUN "..tostring(key).."="..tostring(value)) end
                 end
