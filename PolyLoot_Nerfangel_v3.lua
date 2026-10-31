@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.9]",message)
+    print("[Nerfangel V3.10]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.9 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.10 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -753,7 +753,7 @@ MW.rotateEnemies=false
 MW.rotationBlocked=setmetatable({},{__mode="k"})
 MW.worldTab:Module({
     Title="Alternar monstros da região (XP)",
-    Description="Após derrotar o alvo, caminha até outro vivo da espécie selecionada nos pontos mapeados da região (até 600 studs do início).",
+    Description="Após derrotar o alvo, teleporta até outro vivo da espécie selecionada nos pontos mapeados da região (até 600 studs do início).",
     Icon="repeat",Default=false,Keybind=false,
     Callback=function(enabled)
         if MW.enemyFarmEnabled and MW.setWorldFarmMode then MW.setWorldFarmMode("enemy",false) end
@@ -1474,16 +1474,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.9 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.10 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.9 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.10 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.9 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.10 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1494,7 +1494,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.9 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.10 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -4188,94 +4188,75 @@ function MW.shortStep(npc,id)
     return false
 end
 
--- Regional travel uses normal Humanoid movement; no position writes.
-function MW.walkToRegionalNpc(npc,id)
-    local deadline=os.clock()+60
+-- One ground-checked teleport per acquisition; observe rollback before fighting.
+function MW.teleportRegionalNpc(npc,id)
+    local char,root,hum=getCharacter(),getRoot(),getHumanoid()
+    local pos=enemyPosition(npc)
     local function ready()
-        local hum=getHumanoid()
         local hp=npc.Parent and npc:GetAttribute("Health")
         return MW.worldFarmValid(id) and MW.rotateEnemies and MW.activeNPC==npc
-            and hum and hum.Health>0 and type(hp)=="number" and hp>0
-            and os.clock()<deadline
+            and getCharacter()==char and hum and hum.Health>0
+            and type(hp)=="number" and hp>0
     end
-    local function finish(ok,reason)
-        local root,hum=getRoot(),getHumanoid()
-        if root and hum then hum:MoveTo(root.Position) end
-        if reason then
-            MW.worldStatusLabel:SetValue(reason)
-            PRO.log("Farm XP: "..reason)
-        end
-        return ok
+    if not char or not root or not pos or not ready() then return false end
+    local function inRange(position,target)
+        return horizontalDistance(position,target)<=5.5 and math.abs(position.Y-target.Y)<=8
     end
-    local function move(point,jump)
-        local root,hum=getRoot(),getHumanoid()
-        if not ready() or not root then return false end
-        if jump then hum.Jump=true end
-        hum:MoveTo(point)
-        local started=os.clock()
-        local checkedAt=started
-        local previous=root.Position
-        while ready() and os.clock()-started<8 do
-            local pos=enemyPosition(npc)
-            root=getRoot()
-            if not root or not pos then return false end
-            if horizontalDistance(root.Position,pos)<=5.5 and math.abs(root.Position.Y-pos.Y)<=8 then return true end
-            if horizontalDistance(root.Position,point)<=2 and math.abs(root.Position.Y-point.Y)<=6 then return true end
-            if os.clock()-checkedAt>=1.8 then
-                if horizontalDistance(root.Position,previous)<0.5 then return false end
-                previous=root.Position;checkedAt=os.clock()
+    if inRange(root.Position,pos) then return true end
+    local outward=Vector3.new(root.Position.X-pos.X,0,root.Position.Z-pos.Z)
+    if outward.Magnitude<0.1 then outward=Vector3.new(1,0,0) end
+    outward=outward.Unit
+    local side=Vector3.new(-outward.Z,0,outward.X)
+    local gap=3
+    local boxOk,boxCF,boxSize=pcall(function() return char:GetBoundingBox() end)
+    if boxOk then gap=math.clamp(root.Position.Y-(boxCF.Position.Y-boxSize.Y/2),2,5) end
+    local overlap=OverlapParams.new()
+    overlap.FilterType=Enum.RaycastFilterType.Exclude
+    overlap.FilterDescendantsInstances={char,npc}
+    overlap.RespectCanCollide=true
+    local landing
+    for _,direction in ipairs({outward,-outward,side,-side}) do
+        local point=pos+direction*3.3
+        local floor=MW.groundAt(point,npc)
+        if floor and math.abs(floor.Y-pos.Y)<=9 then
+            local candidate=Vector3.new(point.X,floor.Y+gap+0.2,point.Z)
+            local ok,parts=pcall(function()
+                return workspace:GetPartBoundsInBox(CFrame.new(candidate),Vector3.new(2,3,2),overlap)
+            end)
+            if ok then
+                local clear=true
+                for _,part in ipairs(parts) do if part.CanCollide then clear=false;break end end
+                if clear then landing=candidate;break end
             end
-            task.wait(0.1)
         end
+    end
+    if not landing then
+        PRO.log("Farm XP: nenhum ponto livre junto ao alvo; procurando outro")
         return false
     end
-    for attempt=1,3 do
-        if not ready() then return finish(false) end
-        local root=getRoot()
-        local pos=enemyPosition(npc)
-        if not root or not pos then return finish(false) end
-        if horizontalDistance(root.Position,pos)<=5.5 and math.abs(root.Position.Y-pos.Y)<=8 then
-            return finish(true)
-        end
-        MW.worldStatusLabel:SetValue("Caminhando até "..MW.selectedEnemyName.." — rota "..attempt.."/3")
-        local outward=Vector3.new(root.Position.X-pos.X,0,root.Position.Z-pos.Z)
-        if outward.Magnitude<0.1 then outward=Vector3.new(1,0,0) end
-        local goal=pos+outward.Unit*3.3
-        local ground=MW.groundAt(goal,npc)
-        if not ground then return finish(false,"Sem piso próximo ao alvo; procurando outro") end
-        goal=ground+Vector3.new(0,3,0)
-        local path
-        local ok=pcall(function()
-            path=game:GetService("PathfindingService"):CreatePath({
-                AgentRadius=2,AgentHeight=5,AgentCanJump=true,WaypointSpacing=4,
-            })
-            path:ComputeAsync(root.Position,goal)
-        end)
-        if not ready() then return finish(false) end
-        if not ok or not path or path.Status~=Enum.PathStatus.Success then
-            return finish(false,"Caminho indisponível até o alvo; procurando outro")
-        end
-        local points=path:GetWaypoints()
-        for _,point in ipairs(points) do
-            local origin=MW.rotationOrigin
-            if not origin or horizontalDistance(origin,point.Position)>650 then
-                return finish(false,"Rota fora do limite da região; cancelada")
-            end
-        end
-        for _,point in ipairs(points) do
-            if not move(point.Position,point.Action==Enum.PathWaypointAction.Jump) then break end
-            root=getRoot();pos=enemyPosition(npc)
-            if ready() and root and pos and horizontalDistance(root.Position,pos)<=5.5
-                and math.abs(root.Position.Y-pos.Y)<=8 then
-                return finish(true,"Alvo alcançado a pé — iniciando combate")
-            end
+    if not ready() then return false end
+    hum:MoveTo(root.Position)
+    char:PivotTo(CFrame.lookAt(landing,Vector3.new(pos.X,landing.Y,pos.Z)))
+    MW.lastApproachedNPC=npc
+    MW.worldStatusLabel:SetValue("Verificando teleporte até "..MW.selectedEnemyName)
+    local deadline=os.clock()+1.2
+    while os.clock()<deadline do
+        task.wait(0.1)
+        if not ready() then return false end
+        root=getRoot();pos=enemyPosition(npc)
+        if not root or not pos then return false end
+        if not inRange(root.Position,pos) then
+            PRO.log("Farm XP: teleporte revertido ou alvo afastado; posição não confirmada")
+            MW.worldStatusLabel:SetValue("Teleporte não confirmado — procurando outro alvo")
+            return false
         end
     end
-    return finish(false,"Aproximação interrompida; procurando outro alvo")
+    PRO.log("Farm XP: posição estável junto ao alvo; iniciando combate")
+    return true
 end
 
 function MW.approachOnce(npc,id)
-    if MW.rotateEnemies then return MW.walkToRegionalNpc(npc,id) end
+    if MW.rotateEnemies then return MW.teleportRegionalNpc(npc,id) end
     local char,root,hum=getCharacter(),getRoot(),getHumanoid()
     local pos=enemyPosition(npc)
     if not char or not root or not hum or not pos then return false end
@@ -4871,6 +4852,13 @@ function MW.fight(npc,id)
             flat=horizontalDistance(root.Position,pos)
             vert=math.abs(root.Position.Y-pos.Y)
         end
+        if MW.rotateEnemies and (flat>7 or vert>10) then
+            MW.rotationBlocked[npc]=os.clock()+15
+            MW.activeNPC=nil;MW.lastApproachedNPC=nil
+            hum:MoveTo(root.Position)
+            PRO.log("Farm XP: posição perdida durante combate; procurando outro alvo")
+            return
+        end
         -- Never teleport again while fighting this NPC. Recover knockback by walking.
         if (flat>5.5 or vert>8) and os.clock()>=nextMove then
             if flat<=16 and vert<=16 then
@@ -5264,7 +5252,7 @@ do
     local diag=tab:Section({Title="Diagnóstico da Dark Dungeon",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.9 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.10 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5356,5 +5344,6 @@ do
         diagLabel:SetValue(ok and (result and "Estrutura compatível. Adaptador ainda exige teste no jogo." or tostring(reason)) or tostring(result))
     end})
 end
+
 
 
