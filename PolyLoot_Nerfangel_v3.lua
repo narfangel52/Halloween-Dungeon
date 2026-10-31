@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.18]",message)
+    print("[Nerfangel V3.19]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.18 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.19 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1563,16 +1563,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.18 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.19 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.18 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.19 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.18 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.19 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1583,7 +1583,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.18 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.19 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -5349,6 +5349,7 @@ function MW.setWorldFarmMode(mode,enabled)
         MW.worldGuiSync=false
     end
     if enabled then
+        if PRO.tower and PRO.tower.active then PRO.tower.stop("Farm do mundo ativado") end
         if running and onSpeedrunToggle then onSpeedrunToggle(false) end
         if mode=="enemy" then
             if not MW.validArea(MW.selectedArea) or not MW.selectedEnemyName then
@@ -5452,6 +5453,7 @@ end)
 
 -- ============================================
 onSpeedrunToggle = function(enabled)
+    if enabled and PRO.tower and PRO.tower.active then PRO.tower.stop("Dungeon ativada") end
     if enabled and MW.worldFarmRunning and MW.stopWorldFarm then
         MW.stopWorldFarm()
     end
@@ -5609,6 +5611,7 @@ do
         Content="Halloween preserva a base v2. Dark depende da estrutura carregada no seu jogo: entrada manual, 10 salas previstas e verificação antes de iniciar. Não foi validada no Roblox."})
     identity:Button({Title="Parar todas as automações",Icon="square",Callback=function()
         onSpeedrunToggle(false)
+        if PRO.tower then PRO.tower.stop("Parada geral") end
         if MW.stopWorldFarm then MW.stopWorldFarm() end
         AS.enabled=false; AS.live=false; AS.cancel()
         if AS.module and type(AS.module.Get)=="function" and AS.module:Get() then AS.module:Set(false) end
@@ -5626,7 +5629,7 @@ do
     local diag=tab:Section({Title="Diagnóstico do hub e do farm",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.18 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.19 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5722,6 +5725,11 @@ do
             end
             add("ALVOS XP vivos carregados="..count)
         end
+        if PRO.tower then
+            local t=PRO.tower
+            add("TORRE ativa="..tostring(t.active).." fase="..tostring(t.uiPhase).." andar="..tostring(t.floor).." wave="..tostring(t.wave).."/"..tostring(t.waves).." run="..tostring(t.run))
+            if t.arena then add("TORRE arena="..t.arena:GetFullName()) end
+        end
         for _,line in ipairs(PRO.errors) do add(line) end
         local text=table.concat(lines,"\n")
         print(text)
@@ -5750,3 +5758,378 @@ end
 
 
 
+
+-- Infinite Tower adapter: paths and Push payloads observed in user probe.
+do
+    local T={active=false,token=0,phase="idle",floor=0,wave=0,waves=0,autoNext=true,autoReady=true,autoLoot=true,
+        target=nil,nextAttack=0,nextMove=0,cleared=0,sent={},floorLimit=0}
+    PRO.tower=T
+    function T.node(root,...)
+        for _,name in ipairs({...}) do root=root and root:FindFirstChild(name) end
+        return root
+    end
+    function T.visible(obj)
+        if not obj or not obj.Parent then return false end
+        local current=obj
+        while current and current~=game do
+            if current:IsA("GuiObject") and not current.Visible then return false end
+            if current:IsA("ScreenGui") and not current.Enabled then return false end
+            current=current.Parent
+        end
+        return true
+    end
+    function T.text(obj) return obj and (obj:IsA("TextLabel") or obj:IsA("TextButton")) and obj.Text or "" end
+    function T.valid(id) return T.active and T.token==id and gui.Parent~=nil and not running and not MW.worldFarmRunning end
+    function T.status(message)
+        if T.lastStatus~=message then
+            T.lastStatus=message
+            pcall(function() T.statusLabel:SetValue(message) end)
+        end
+    end
+    function T.readUi()
+        local hud=playerGui:FindFirstChild("TowerRunV5")
+        if not hud or not hud:IsA("ScreenGui") or not hud.Enabled then return "missing",nil,nil end
+        local result=T.node(hud,"Result")
+        local title=T.node(result,"Head","Title")
+        if T.visible(result) and T.visible(title) then
+            local floor=tonumber(T.text(T.node(result,"Head","Floor")):match("[Ff][Ll][Oo][Oo][Rr]%s+(%d+)"))
+            if T.text(title)=="CLEARED!" then
+                local label=T.text(T.node(result,"Again","Background","Frame","Label"))
+                return "cleared",floor,label=="NEXT FLOOR" and T.node(result,"Again","Btn") or nil
+            end
+            if T.text(title)~="" then return "result",floor,nil end
+        end
+        local intro=T.node(hud,"Intro")
+        local ready=T.node(intro,"Ready","Btn")
+        if T.visible(intro) and T.visible(ready) then
+            local floor=tonumber(T.text(T.node(intro,"Head","Title")):match("[Ff][Ll][Oo][Oo][Rr]%s+(%d+)"))
+            local label=T.text(T.node(intro,"Ready","Background","Frame","Label"))
+            return "intro",floor,label=="READY" and ready or nil
+        end
+        local crest=T.node(hud,"Crest","Words")
+        local bar=T.node(hud,"Bar")
+        if T.visible(bar) and T.visible(crest) then
+            return "fight",tonumber(T.text(crest):match("[Ff]loor%s+(%d+)")),nil
+        end
+        return "transition",nil,nil
+    end
+    function T.onPush(action,data)
+        if not T.active or type(data)~="table" then return end
+        if action=="state" then
+            if data.inRun==false then T.stop("Você saiu da torre") end
+            return
+        end
+        if action=="intro" then
+            local changed=(data.run and data.run~=T.run) or (tonumber(data.floor) and tonumber(data.floor)~=T.floor)
+            T.run=data.run;T.floor=tonumber(data.floor) or T.floor
+            T.wave=0;T.waves=0;T.target=nil;T.arena=nil;T.nextMove=0;T.replay=data.replay==true
+            if changed then T.sent={};T.lootKey=nil end
+            T.phase="intro"
+        elseif action=="fight" then
+            if T.run and data.run and T.run~=data.run then return end
+            T.run=data.run or T.run;T.floor=tonumber(data.floor) or T.floor;T.phase="fight"
+        elseif action=="wave" then
+            if T.run and data.run and T.run~=data.run then return end
+            T.run=data.run or T.run;T.wave=tonumber(data.wave) or T.wave
+            T.waves=tonumber(data.waves) or T.waves;T.phase="fight"
+        elseif action=="won" then
+            if T.run and data.run and T.run~=data.run then return end
+            T.run=data.run or T.run;T.floor=tonumber(data.floor) or T.floor;T.phase="cleared"
+            T.target=nil;T.replay=data.replay==true
+        end
+    end
+    function T.resolveArena()
+        local root=getRoot()
+        local folder=workspace:FindFirstChild("TowerRuns")
+        if not root or not folder then return nil end
+        if T.arena and T.arena.Parent and T.arena:GetAttribute("TowerFloor")==T.floor then return T.arena end
+        local best,distance
+        for _,arena in ipairs(folder:GetChildren()) do
+            if arena:IsA("Model") and tonumber(arena:GetAttribute("TowerFloor"))==T.floor then
+                local ok,cf,size=pcall(function() return arena:GetBoundingBox() end)
+                if ok then
+                    local d=(root.Position-cf.Position).Magnitude
+                    if d<350 and (not distance or d<distance) then best,distance=arena,d end
+                end
+            end
+        end
+        T.arena=best
+        return best
+    end
+    function T.ground(position)
+        local arena=T.resolveArena()
+        if not arena then return nil end
+        local params=RaycastParams.new()
+        params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances={arena}
+        params.RespectCanCollide=true;params.IgnoreWater=true
+        local hit=workspace:Raycast(position+Vector3.new(0,20,0),Vector3.new(0,-65,0),params)
+        if hit and hit.Normal.Y>=0.65 then return hit.Position end
+        return nil
+    end
+    function T.inArena(position)
+        local arena=T.resolveArena()
+        if not arena then return false end
+        local cf,size=arena:GetBoundingBox()
+        local point=cf:PointToObjectSpace(position)
+        if math.abs(point.X)>size.X/2+10 or math.abs(point.Z)>size.Z/2+10 or math.abs(point.Y)>size.Y/2+45 then return false end
+        return T.ground(position)~=nil
+    end
+    function T.findEnemy()
+        local folder=T.node(workspace,"Animal_Live","Aggressors")
+        local root=getRoot()
+        if not folder or not root or not T.resolveArena() then return nil end
+        local function eligible(npc)
+            local hp=npc and npc.Parent==folder and npc:IsA("Model") and npc:GetAttribute("Health")
+            local pos=type(hp)=="number" and hp>0 and enemyPosition(npc)
+            return pos and horizontalDistance(root.Position,pos)<=180 and T.inArena(pos)
+        end
+        if T.target and eligible(T.target) then return T.target end
+        T.target=nil
+        local best,distance
+        for _,npc in ipairs(folder:GetChildren()) do
+            if eligible(npc) then
+                local d=horizontalDistance(root.Position,enemyPosition(npc))
+                if not distance or d<distance then best,distance=npc,d end
+            end
+        end
+        if best then T.lastHp=best:GetAttribute("Health");T.lastDamage=os.clock();T.nextMove=0;T.moveFailures=0 end
+        T.target=best
+        return best
+    end
+    function T.land(npc,id,otherSide)
+        local root,hum,char=getRoot(),getHumanoid(),getCharacter()
+        local pos=enemyPosition(npc)
+        local floor=T.floor
+        if not root or not hum or hum.Health<=0 or not pos or not T.valid(id) then return false end
+        local delta=Vector3.new(root.Position.X-pos.X,0,root.Position.Z-pos.Z)
+        if delta.Magnitude<0.1 then delta=Vector3.new(1,0,0) end
+        local outward=delta.Unit
+        if otherSide then outward=-outward end
+        local side=Vector3.new(-outward.Z,0,outward.X)
+        local overlap=OverlapParams.new()
+        overlap.FilterType=Enum.RaycastFilterType.Exclude;overlap.FilterDescendantsInstances={char,npc};overlap.RespectCanCollide=true
+        for _,direction in ipairs({outward,side,-side,-outward}) do
+            local probe=pos+direction*2.8
+            local ground=T.ground(probe)
+            if ground and math.abs(ground.Y-pos.Y)<=12 then
+                local point=Vector3.new(probe.X,ground.Y+3.2,probe.Z)
+                if MW.regionalLandingClear(point,overlap) then
+                    if not T.valid(id) or getCharacter()~=char or T.floor~=floor or T.readUi()~="fight" then return false end
+                    hum:MoveTo(root.Position)
+                    char:PivotTo(CFrame.lookAt(point,Vector3.new(pos.X,point.Y,pos.Z)))
+                    task.wait(0.25)
+                    root=getRoot();pos=enemyPosition(npc)
+                    return T.valid(id) and getCharacter()==char and T.floor==floor and root and pos
+                        and horizontalDistance(root.Position,pos)<=6 and math.abs(root.Position.Y-pos.Y)<=9 or false
+                end
+            end
+        end
+        return false
+    end
+    function T.click(button,id,phase)
+        local function ready()
+            local actual,_,current=T.readUi()
+            return T.valid(id) and actual==phase and current==button and T.visible(button) and button.Active and button.Interactable
+        end
+        if not ready() then return false,"Botão ainda indisponível" end
+        local key=tostring(T.run or T.floor)..":"..T.floor..":"..phase
+        if T.sent[key] then return false,"Clique já solicitado; aguardando confirmação" end
+        -- Reserve before input dispatch; never repeat after a possibly partial input.
+        T.sent[key]=true
+        for _,method in ipairs(replayMethodOrder()) do
+            if not ready() then return false,"Tela mudou antes do clique" end
+            if method=="signal" or method=="connections" then
+                local handler=method=="signal" and tryFireSignalReplay or tryConnectionsReplay
+                local ok,sent,reason=pcall(handler,id,button)
+                if ok and sent then return true,tostring(reason) end
+                if method=="connections" and type(getconnections)=="function" then
+                    local inspected,_,_,list=pcall(chooseReplaySignal,button)
+                    if inspected and type(list)=="table" then
+                        for _,conn in ipairs(list) do
+                            if conn.Enabled~=false and (type(conn.Fire)=="function" or type(conn.Function)=="function") then
+                                return true,"Conexão acionada; aguardando confirmação"
+                            end
+                        end
+                    end
+                end
+            elseif method=="native" and canUseNativeMouse() and getNativeMouseFocus() then
+                local shown=frame.Visible
+                local started,pressed=false,false
+                local ok,err=pcall(function()
+                    frame.Visible=false;task.wait(0.12)
+                    if not ready() then error("Tela mudou") end
+                    local x,y,reason=replayButtonCenter(button)
+                    if not x then error(reason) end
+                    local aligned=moveToReplayCenter(x,y,button)
+                    if not aligned or not ready() or not getNativeMouseFocus() then error("Botão sem foco/alinhamento") end
+                    started=true
+                    if type(mouse1press)=="function" and type(mouse1release)=="function" then
+                        pressed=true;mouse1press();task.wait(0.08);mouse1release();pressed=false
+                    else mouse1click() end
+                end)
+                if pressed then pcall(mouse1release) end
+                frame.Visible=shown and gui.Parent~=nil
+                if started then return true,ok and "Clique nativo enviado" or tostring(err) end
+            elseif method=="virtual" then
+                local started=false
+                local vim,x,y
+                local shown=frame.Visible
+                local ok,err=pcall(function()
+                    vim=game:GetService("VirtualInputManager")
+                    frame.Visible=false;task.wait(0.1)
+                    if not ready() then error("Tela mudou") end
+                    local reason
+                    x,y,reason=replayButtonCenter(button)
+                    if not x then error(reason) end
+                    started=true
+                    vim:SendMouseButtonEvent(x,y,0,true,game,0)
+                    task.wait(0.08)
+                end)
+                if started and vim then pcall(function() vim:SendMouseButtonEvent(x,y,0,false,game,0) end) end
+                frame.Visible=shown and gui.Parent~=nil
+                if started then return true,ok and "Clique virtual enviado" or tostring(err) end
+            end
+        end
+        return false,"API de clique indisponível; clique manualmente"
+    end
+    function T.collect(id)
+        if not T.autoLoot then return end
+        local root=getRoot()
+        if not root then return end
+        local deadline=os.clock()+4
+        for _,drop in ipairs(getNearbyDrops(root.Position)) do
+            if not T.valid(id) or os.clock()>deadline or T.readUi()~="cleared" then break end
+            if drop.aura.Parent and drop.prompt.Parent and drop.prompt.Enabled and T.inArena(drop.aura.Position) then
+                local char,hum=getCharacter(),getHumanoid()
+                if not char or not hum or hum.Health<=0 then break end
+                char:PivotTo(CFrame.new(drop.aura.Position+Vector3.new(0,2.5,0)))
+                task.wait(0.2)
+                root=getRoot()
+                if not T.valid(id) or getCharacter()~=char then break end
+                if root and drop.prompt.Parent and drop.prompt.Enabled
+                    and (root.Position-drop.aura.Position).Magnitude<=drop.prompt.MaxActivationDistance
+                    and type(fireproximityprompt)=="function" then
+                    pcall(fireproximityprompt,drop.prompt)
+                    task.wait(0.2)
+                end
+            end
+        end
+    end
+    function T.step(id)
+        local phase,floor,button=T.readUi()
+        if floor and floor~=T.floor then T.floor=floor;T.arena=nil;T.target=nil;T.wave=0;T.waves=0;T.sent={} end
+        local phaseChanged=phase~=T.uiPhase
+        T.uiPhase=phase
+        if phaseChanged then T.status("Torre: "..phase);PRO.log("Torre: "..phase.." | andar="..T.floor) end
+        if phase=="missing" then
+            T.missingSince=T.missingSince or os.clock()
+            if os.clock()-T.missingSince>5 then T.stop("HUD da torre não encontrado — entre manualmente") end
+            return
+        end
+        T.missingSince=nil
+        if phase=="result" then T.stop("Resultado sem vitória — automação parada");return end
+        local hum=getHumanoid()
+        if not hum or hum.Health<=0 then T.stop("Personagem sem vida — automação parada");return end
+        if phase=="intro" then
+            T.target=nil
+            if T.autoReady then local sent,reason=T.click(button,id,phase);T.status(sent and "READY solicitado — aguardando combate" or reason) end
+        elseif phase=="cleared" then
+            T.target=nil
+            local key=tostring(T.floor)
+            if T.winKey~=key then T.winKey=key;T.cleared+=1 end
+            if T.lootKey~=key then T.lootKey=key;T.collect(id) end
+            if not T.valid(id) then return end
+            if T.floorLimit>0 and T.floor>=T.floorLimit then T.stop("Andar limite concluído");return end
+            if T.autoNext then local sent,reason=T.click(button,id,phase);T.status(sent and "NEXT FLOOR solicitado — aguardando novo andar" or reason) end
+        elseif phase=="fight" then
+            local npc=T.findEnemy()
+            if not npc then T.status("Aguardando inimigos ou próxima wave");return end
+            local hp=npc:GetAttribute("Health")
+            if T.lastHp and hp<T.lastHp then T.lastDamage=os.clock() end
+            T.lastHp=hp
+            local root=getRoot();local pos=enemyPosition(npc)
+            if not root or not pos then return end
+            local now=os.clock()
+            local noDamage=now-(T.lastDamage or now)
+            local distance=horizontalDistance(root.Position,pos)
+            local height=math.abs(root.Position.Y-pos.Y)
+            if now>=T.nextMove and (distance>3.5 or height>7 or noDamage>6) then
+                T.nextMove=now+(noDamage>6 and 2 or 0.4)
+                local ok=T.land(npc,id,noDamage>6)
+                if not T.valid(id) or T.readUi()~="fight" then return end
+                if not ok then
+                    T.moveFailures=(T.moveFailures or 0)+1
+                    if T.moveFailures>=3 then T.nextMove=os.clock()+3;T.status("Aproximação não confirmada — mantendo alvo") end
+                    return
+                end
+                T.moveFailures=0
+                root=getRoot();pos=enemyPosition(npc)
+                if not root or not pos then return end
+                distance=horizontalDistance(root.Position,pos);height=math.abs(root.Position.Y-pos.Y)
+            end
+            local tool=MW.equipWeapon()
+            if not tool then T.status("Equipe sua arma de combate");return end
+            if distance<=5.5 and height<=8 and tool.Enabled and os.clock()>=T.nextAttack
+                and T.valid(id) and T.readUi()=="fight" and npc.Parent and npc:GetAttribute("Health")>0 then
+                tool:Activate();T.nextAttack=os.clock()+CFG.ATTACK_INTERVAL
+                T.status("Combatendo "..tostring(npc:GetAttribute("Animal") or npc.Name))
+            end
+        end
+    end
+    function T.stop(reason)
+        T.active=false;T.token+=1;T.target=nil;T.arena=nil
+        if T.connection then T.connection:Disconnect();T.connection=nil end
+        stopMovement()
+        if T.module and not T.sync then
+            T.sync=true;pcall(function() if T.module:Get() then T.module:Set(false) end end);T.sync=false
+        end
+        T.status(reason or "Torre parada")
+    end
+    function T.start()
+        local phase=T.readUi()
+        if phase=="missing" then T.stop("Entre manualmente na Infinite Tower antes de ativar");return end
+        local push=T.node(game:GetService("ReplicatedStorage"),"Tower_Engine","Remotes","Push")
+        if not push or not push:IsA("RemoteEvent") then T.stop("Tower_Engine.Push não encontrado — gere diagnóstico");return end
+        if running then onSpeedrunToggle(false) end
+        if MW.worldFarmRunning then MW.stopWorldFarm() end
+        if T.connection then T.connection:Disconnect() end
+        T.token+=1;T.active=true;T.sent={};T.run=nil;T.floor=0;T.wave=0;T.waves=0;T.winKey=nil;T.lootKey=nil
+        T.nextMove=0;T.nextAttack=0;T.target=nil;T.uiPhase=nil;T.missingSince=nil
+        T.connection=push.OnClientEvent:Connect(T.onPush)
+        local id=T.token
+        task.spawn(function()
+            local ok,err=xpcall(function()
+                while T.valid(id) do
+                    T.step(id)
+                    if T.active then
+                        T.progressLabel:SetValue("Andar "..T.floor..(T.floor>0 and T.floor%5==0 and " • Boss" or "").." | wave "..T.wave.."/"..(T.waves>0 and T.waves or "?"))
+                        T.statsLabel:SetValue("Andares concluídos: "..T.cleared)
+                    end
+                    task.wait(0.1)
+                end
+            end,debug.traceback)
+            if not ok and T.token==id then PRO.log("ERRO Torre: "..tostring(err));T.stop("Erro na torre — consulte o diagnóstico/F9") end
+        end)
+    end
+    local tab=Window:Tab({Title="Torre infinita",Icon="layers",Columns=1})
+    local controls=tab:Section({Title="1 • Infinite Tower BETA",Icon="tower-control"})
+    controls:Paragraph({Title="Entre na torre manualmente",Content="Lê o HUD TowerRunV5 e os eventos Push. Quantidade de waves dinâmica; bosses previstos nos andares múltiplos de 5. Não compra revives nem retorna ao mundo automaticamente."})
+    T.module=controls:Toggle({Title="Automatizar a torre",Default=false,Callback=function(enabled)
+        if T.sync then return end
+        if enabled then T.start() else T.stop() end
+    end})
+    controls:Toggle({Title="Avançar após CLEARED",Default=true,Callback=function(v)T.autoNext=v==true end})
+    controls:Toggle({Title="Confirmar READY no próximo andar",Default=true,Callback=function(v)T.autoReady=v==true end})
+    controls:Toggle({Title="Coletar ao concluir o andar",Default=true,Callback=function(v)T.autoLoot=v==true end})
+    controls:Slider({Title="Parar após este andar (0 = ilimitado)",Min=0,Max=500,Step=1,Default=0,Callback=function(v)T.floorLimit=math.max(0,math.floor(tonumber(v) or 0))end})
+    local state=tab:Section({Title="2 • Acompanhamento",Icon="activity"})
+    T.statusLabel=state:Label({Text="Estado",Value="Entre manualmente na torre e ative"})
+    T.progressLabel=state:Label({Text="Progresso",Value="Andar — | wave —"})
+    T.statsLabel=state:Label({Text="Sessão",Value="Andares concluídos: 0"})
+    state:Button({Title="Liberar nova tentativa de clique",Icon="mouse-pointer-click",Callback=function()
+        T.sent={};T.status("Nova tentativa liberada pelo usuário")
+    end})
+    state:Button({Title="Parar torre",Icon="square",Callback=function()T.stop()end})
+    state:Paragraph({Title="Confirmação de avanço",Content="Um clique por tela/andar. Se o botão não responder, use Liberar nova tentativa ou clique manualmente. Não avança só porque o contador chegou a zero. Andares de replay podem não conceder recompensas."})
+    gui.Destroying:Connect(function() T.stop("Hub encerrado") end)
+end
