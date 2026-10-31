@@ -55,3 +55,9 @@ Reference: https://create.roblox.com/docs/characters/pathfinding
 
 ## V3.5: temporary door walking speed
 Adds Nerfangel-tab slider 16–40 studs/s, default 24, applied during Dark approach/crossing only. Does not slow a character already faster. Restores the original speed on completion, cancellation and exceptions, except if the game changed the speed meanwhile. Does not force speed repeatedly when the game overrides it. Combat unchanged. Mock tests cover success, failure, cancellation and game-side changes; live speed behavior still requires testing.
+
+
+## V3.6: recover doorway approach after loot
+When PathfindingService returns NoPath or no waypoints, tries bounded alternative walking routes: direct, through the position saved before collecting, and two axis-aligned routes. Recovery points must belong to the same run and room and be younger than 90 seconds. Each segment requires sampled floor in the current room and a clear collidable-body Blockcast; revalidates before walking. Existing cancellation, movement timeouts, open-door checks and speed restoration remain. Does not teleport to the doorway. Combat unchanged.
+
+Validation: full Luau syntax parse; isolated route selection tests for direct/recovery paths, blocked routes, stale recovery points and different room/run; source comparison confirms combat unchanged. Actual post-loot traversal still requires Roblox testing.
