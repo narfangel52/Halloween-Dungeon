@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.16]",message)
+    print("[Nerfangel V3.17]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.16 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.17 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -694,7 +694,7 @@ function MW.loadAreaMarkers()
 end
 MW.loadAreaMarkers()
 
-MW.selectionSection=MW.worldTab:Section({Title="Farm de XP • Região e alvo",Icon="target"})
+MW.selectionSection=MW.worldTab:Section({Title="1 • Região e monstro",Icon="target"})
 MW.selectionInfo=MW.selectionSection:Paragraph({
     Title="Escolha a região e a espécie",
     Content="Selecione a região, escolha o monstro e ative o farm. A rotação mantém o alvo vivo até terminar o combate. Padrão de pausa entre passos: 0,25 s.",
@@ -710,7 +710,7 @@ MW.areaDropdown=MW.selectionSection:Dropdown({
         {Title="Grasslands",Value="Grasslands"},
     },
     Multi=false,Search=false,AllowNone=true,
-    Placeholder="Select an area...",
+    Placeholder="Selecione a região...",
     Callback=function(selection)
         if MW.worldUiRefreshing then return end
         local area=singleChoice(selection)
@@ -725,7 +725,7 @@ MW.areaDropdown=MW.selectionSection:Dropdown({
 })
 MW.enemyDropdown=MW.selectionSection:Dropdown({
     Title="Espécie do monstro", Values={}, Multi=false, Search=true, AllowNone=true,
-    Placeholder="Choose an enemy in this area...",
+    Placeholder="Selecione o monstro...",
     Callback=function(selection)
         if MW.worldUiRefreshing then return end
         local enemy=singleChoice(selection)
@@ -735,26 +735,14 @@ MW.enemyDropdown=MW.selectionSection:Dropdown({
         end
     end,
 })
-MW.selectionSection:Button({
-    Title="Mapear pontos próximos da região",
-    Description="Only needed if area mapping is missing. Stand within your area; capture nearby spawn markers.",
-    Icon="map-pin",
-    Callback=function()
-        if MW.captureAreaMarkers then MW.captureAreaMarkers() end
-    end,
-})
-MW.selectionSection:Button({
-    Title="Atualizar lista de monstros",
-    Icon="refresh-cw",
-    Callback=function() if MW.refreshAreaEnemies then MW.refreshAreaEnemies() end end,
-})
+MW.controlSection=MW.worldTab:Section({Title="2 • Execução e movimento",Icon="sliders-horizontal"})
 MW.rotateEnemies=false
 MW.autoReposition=true
 MW.repositionTimes=setmetatable({},{__mode="k"})
 MW.countedKills=setmetatable({},{__mode="k"})
 MW.regionalStepWait=0.25
 MW.rotationBlocked=setmetatable({},{__mode="k"})
-MW.worldTab:Module({
+MW.controlSection:Toggle({
     Title="Alternar monstros da região (XP)",
     Description="Seleciona outro vivo nos pontos mapeados até 600 studs do início. Aproximação por passos de até 20 studs, com piso e chegada verificados.",
     Icon="repeat",Default=false,Keybind=false,
@@ -766,17 +754,17 @@ MW.worldTab:Module({
         MW.rotationBlocked=setmetatable({},{__mode="k"})
     end,
 })
-MW.selectionSection:Slider({
+MW.controlSection:Slider({
     Title="Pausa entre passos de teleporte (s)",
     Min=0.1,Max=1.2,Default=0.25,Step=0.05,
     Callback=function(value) MW.regionalStepWait=math.clamp(tonumber(value) or 0.25,0.1,1.2) end,
 })
-MW.selectionSection:Toggle({
+MW.controlSection:Toggle({
     Title="Reposicionar quando os ataques não causarem dano",
     Description="Após 6 s sem redução de vida, tenta o lado oposto do mesmo alvo com piso e espaço livres. Intervalo mínimo: 8 s.",
     Default=true,Callback=function(value) MW.autoReposition=value==true end,
 })
-MW.worldEnemiesModule=MW.worldTab:Module({
+MW.worldEnemiesModule=MW.controlSection:Toggle({
     Title="Ativar farm de monstros",
     Description="Ative a rotação para alternar entre os monstros. Com a rotação desligada, permanece no mesmo ponto.",
     Icon="swords", Default=false, Keybind=false,
@@ -784,14 +772,44 @@ MW.worldEnemiesModule=MW.worldTab:Module({
         if MW.onWorldFarmToggle then MW.onWorldFarmToggle("enemy",enabled) end
     end,
 })
+MW.worldStatusSection=MW.worldTab:Section({Title="3 • Acompanhamento",Icon="activity"})
+MW.worldStatusLabel=MW.worldStatusSection:Label({Text="Status",Value="Choose area + enemy"})
+MW.worldTargetLabel=MW.worldStatusSection:Label({Text="Alvo atual",Value="-"})
+MW.worldKillsLabel=MW.worldStatusSection:Label({Text="Derrotas observadas",Value="0"})
+MW.worldAttackLabel=MW.worldStatusSection:Label({Text="Ataques solicitados",Value="0"})
+MW.worldHealthLabel=MW.worldStatusSection:Label({Text="Vida e distância do alvo",Value="Sem alvo"})
+MW.worldPaceLabel=MW.worldStatusSection:Label({Text="Derrotas por minuto de farm",Value="0,0"})
+
+
+
+MW.worldTab:Section({Title="4 • Coleta",Icon="package"}):Toggle({
+    Title="Coletar itens após derrotar o alvo",
+    Description="Recolhe os itens ligados ao alvo derrotado antes de seguir para o próximo.",
+    Default=true,
+    Callback=function(value) MW.worldAutoLoot=value==true end,
+})
+MW.mapSection=MW.worldTab:Section({Title="5 • Mapeamento e atualização",Icon="map-pin"})
+MW.mapSection:Button({
+    Title="Mapear pontos próximos da região",
+    Description="Use se o monstro não aparecer na lista. Fique perto dos pontos da região selecionada.",
+    Icon="map-pin",
+    Callback=function()
+        if MW.captureAreaMarkers then MW.captureAreaMarkers() end
+    end,
+})
+MW.mapSection:Button({
+    Title="Atualizar lista de monstros",
+    Icon="refresh-cw",
+    Callback=function() if MW.refreshAreaEnemies then MW.refreshAreaEnemies() end end,
+})
 -- World Boss controls. Existing combat scheduling is unchanged.
 -- Boss names are dynamically discovered from explicit boss NPC metadata/folders.
-MW.bossSection=MW.worldTab:Section({Title="Chefes do mundo",Icon="crown"})
+MW.bossSection=MW.worldTab:Section({Title="6 • Chefes do mundo",Icon="crown"})
 MW.bossDropdown=MW.bossSection:Dropdown({
     Title="Chefes do mundo",
     Values={{Title="Qualquer chefe detectado",Value="__any_boss"}},
     Default="__any_boss",Multi=false,Search=true,AllowNone=false,
-    Placeholder="Choose boss or Any detected Boss",
+    Placeholder="Selecione um chefe ou qualquer um",
     Callback=function(selection)
         if MW.bossUiRefreshing then return end
         local name=singleChoice(selection)
@@ -804,8 +822,8 @@ MW.bossDropdown=MW.bossSection:Dropdown({
         end
     end,
 })
-MW.bossModule=MW.worldTab:Module({
-    Title="Auto Farm World Boss",
+MW.bossModule=MW.bossSection:Toggle({
+    Title="Ativar farm de chefes",
     Description="Watch for the selected World Boss and farm it when available.",
     Icon="crown",Default=false,Keybind=false,
     Callback=function(enabled)
@@ -954,22 +972,6 @@ function MW.showSelectedBossSignTimer()
     end
 end
 
-MW.worldTab:Section({Title="Coleta de itens",Icon="package"}):Toggle({
-    Title="Coletar itens após derrotar o alvo",
-    Description="Collect drops from the locked enemy only.",
-    Default=true,
-    Callback=function(value) MW.worldAutoLoot=value==true end,
-})
-MW.worldStatusSection=MW.worldTab:Section({Title="Acompanhamento do farm",Icon="activity"})
-MW.worldStatusLabel=MW.worldStatusSection:Label({Text="Status",Value="Choose area + enemy"})
-MW.worldTargetLabel=MW.worldStatusSection:Label({Text="Alvo atual",Value="-"})
-MW.worldKillsLabel=MW.worldStatusSection:Label({Text="Derrotas observadas",Value="0"})
-MW.worldAttackLabel=MW.worldStatusSection:Label({Text="Ataques solicitados",Value="0"})
-MW.worldHealthLabel=MW.worldStatusSection:Label({Text="Vida e distância do alvo",Value="Sem alvo"})
-MW.worldPaceLabel=MW.worldStatusSection:Label({Text="Derrotas por minuto de farm",Value="0,0"})
-
-
-
 -- ================================================================
 -- AUTO SELL V5.9.6 | REGISTRY NAMES, RARITY FILTER, PROTECTED INSTANCE CHECKS
 -- ================================================================
@@ -981,15 +983,38 @@ local AS = {
 }
 MW.AS=AS
 local ReplicatedStorageAS=game:GetService("ReplicatedStorage")
-local InventoryEngineAS=ReplicatedStorageAS:WaitForChild("Inventory_Engine")
-local PlayerDataAS=require(player:WaitForChild("PlayerScripts"):WaitForChild("Data_Client"):WaitForChild("PlayerData"))
-local RegistryAS=require(InventoryEngineAS.Modules:WaitForChild("ItemRegistry"))
-local SellValueAS=require(InventoryEngineAS.Modules:WaitForChild("SellValue"))
-local ReserveAS=require(ReplicatedStorageAS:WaitForChild("Quest_Engine"):WaitForChild("Reserve"))
-local SellRemoteAS=InventoryEngineAS.Remotes:WaitForChild("SellRequest")
+local InventoryEngineAS,PlayerDataAS,SellValueAS,ReserveAS,SellRemoteAS
+local RegistryAS={}
+AS.ready=false
+function AS.loadDependencies()
+    local function child(parent,name)
+        local value=parent and parent:WaitForChild(name,5)
+        if not value then error("Dependência de venda indisponível: "..name) end
+        return value
+    end
+    local ok,err=pcall(function()
+        local engine=child(ReplicatedStorageAS,"Inventory_Engine")
+        local scripts=child(player,"PlayerScripts")
+        local client=child(scripts,"Data_Client")
+        local pdata=require(child(client,"PlayerData"))
+        local modules=child(engine,"Modules")
+        local registry=require(child(modules,"ItemRegistry"))
+        local values=require(child(modules,"SellValue"))
+        local reserve=require(child(child(ReplicatedStorageAS,"Quest_Engine"),"Reserve"))
+        local remote=child(child(engine,"Remotes"),"SellRequest")
+        InventoryEngineAS,PlayerDataAS,RegistryAS,SellValueAS,ReserveAS,SellRemoteAS=engine,pdata,registry,values,reserve,remote
+    end)
+    AS.ready=ok
+    AS.dependencyError=not ok and tostring(err) or nil
+    if not ok then warn("[AUTOSELL]",AS.dependencyError) end
+    return ok
+end
 local replicaAS=nil
+AS.cancelGeneration=0
+function AS.cancel() AS.cancelGeneration+=1 end
 
 local function inventorySnapshot()
+    if not AS.ready then return nil,nil,AS.dependencyError or "Módulos de venda ainda carregando" end
     if not replicaAS then
         local ok,result=pcall(function() return PlayerDataAS:WaitFor(nil,10) end)
         if ok and type(result)=="table" then replicaAS=result end
@@ -1064,6 +1089,9 @@ local function eligibleAS(serial,item,bucket,data)
     if item.Serial~=nil and item.Serial~=serial then return nil,"serial mismatch" end
     if item.Source=="Starter" and bucket=="Weapons" then return nil,"starter weapon" end
     if item.Bound==nil then return nil,"binding status unknown" end
+    if type(data.Quests)~="table" or type(data.Quests.Story)~="table" then
+        return nil,"quest reservation data unknown"
+    end
     if data.Quests and data.Quests.Story then
         local okReserve,amount=pcall(function() return ReserveAS.For(data.Quests.Story,item.Id) end)
         if not okReserve or type(amount)~="number" then return nil,"quest reservation unknown" end
@@ -1135,6 +1163,7 @@ function AS.preview(reason,execute,forceNow)
         return
     end
     AS.busy=true
+    local generation=AS.cancelGeneration
     local ok,err=pcall(function()
         local plan,_,problem=planAS()
         if not plan then
@@ -1172,7 +1201,7 @@ function AS.preview(reason,execute,forceNow)
         local limit=forceNow and #plan.candidates or 1
         local sent=0
         for i=1,limit do
-            if not gui.Parent then break end
+            if not gui.Parent or generation~=AS.cancelGeneration then break end
             if not forceNow and not AS.enabled then break end
             local target=plan.candidates[i]
             local inv2,data2=inventorySnapshot()
@@ -1192,12 +1221,13 @@ function AS.preview(reason,execute,forceNow)
                     break
                 end
                 print("[AUTOSELL][LIVE] Selling",fresh.id,fresh.serial,fresh.qty)
+                if generation~=AS.cancelGeneration or not gui.Parent then break end
                 SellRemoteAS:FireServer({[fresh.serial]=fresh.qty})
                 sent+=1
                 PRO.saleRequests+=1
                 local beforeCount=item.Count
                 local confirmationDeadline=os.clock()+2
-                while gui.Parent and os.clock()<confirmationDeadline do
+                while gui.Parent and generation==AS.cancelGeneration and os.clock()<confirmationDeadline do
                     local after=inventorySnapshot()
                     local remaining=after and after[fresh.bucket] and after[fresh.bucket][fresh.serial]
                     if after and (not remaining or (type(remaining.Count)=="number" and remaining.Count<=beforeCount-fresh.qty)) then
@@ -1343,13 +1373,14 @@ AS.section:Toggle({Title="Guardar uma unidade de cada item",Default=true,
 AS.section:Button({Title="Prévia da venda (sem vender)",Icon="eye",
     Description="Exibe itens elegíveis e motivos de exclusão no console F9.",
     Callback=function() AS.preview("Prévia manual",false,true) end})
-AS.section:Toggle({
+AS.module=AS.section:Toggle({
     Title="Enable Auto Sell",Default=false,
     Description="Automatically sells eligible copies when inventory reaches the threshold. "..
        "Protected copies are excluded; max one instance per cycle.",
     Callback=function(value)
         AS.enabled=value==true
         AS.live=AS.enabled
+        if not AS.enabled then AS.cancel() end
         statusAS(AS.enabled and "ON | Monitoring inventory" or "OFF")
     end,
 })
@@ -1367,7 +1398,13 @@ AS.section:Button({
 
 -- Populate from all static definitions rather than the player's current inventory.
 -- Defer so the dropdown object is ready before Refresh/Set.
-task.defer(refreshRegistryDropdownAS)
+task.spawn(function()
+    if AS.loadDependencies() and gui.Parent then
+        refreshRegistryDropdownAS()
+    elseif gui.Parent then
+        statusAS("Venda indisponível — consulte o diagnóstico")
+    end
+end)
 
 task.spawn(function()
     while gui.Parent do
@@ -1490,16 +1527,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.16 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.17 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.16 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.17 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.16 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.17 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1510,7 +1547,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.16 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.17 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -1532,6 +1569,7 @@ end
 
 -- Stop all background dungeon tasks if OasisUI is unloaded.
 OasisUI:OnUnload(function()
+    AS.cancel()
     MW.worldFarmRunning = false
     MW.enemyFarmEnabled = false
     MW.bossFarmEnabled = false
@@ -1876,7 +1914,8 @@ local function installSceneReplayListener()
 
     PRO.sceneConnection=conn
     -- Prevent accumulating listeners when the script GUI is destroyed.
-    gui.Destroying:Connect(function()
+    if PRO.sceneCleanup then PRO.sceneCleanup:Disconnect() end
+    PRO.sceneCleanup=gui.Destroying:Connect(function()
         pcall(function() conn:Disconnect() end)
     end)
     debugPrint("[SCENE] Listener enabled: exit -> arrive -> gate")
@@ -1969,7 +2008,7 @@ end
 -- DYNAMISCHE UI ERKENNUNG
 
 -- ============================================
-local observedLabels = {}
+local observedLabels = setmetatable({}, {__mode="k"})
 
 local function isNotificationLabel(obj)
     if not obj:IsA("TextLabel")
@@ -3917,7 +3956,7 @@ end
 -- Deliberately no long-range route, area roaming, boss loop, target switching,
 -- multi-spawn farm, global teleport watchdog, or UID-based player selection.
 MW.dropOrigins={}
-MW.dropAttempts={}
+MW.dropAttempts=setmetatable({},{__mode="k"})
 MW.lastWeaponAttempt=-1e12
 MW.lockedSpawn=nil
 MW.activeNPC=nil
@@ -4015,7 +4054,8 @@ function MW.lockNearestSpawn()
         return false
     end
     -- Choose a LIVE matching spawn first, otherwise the nearest fixed spawn.
-    local enemies=getEnemies()
+    local live=workspace:FindFirstChild("Animal_Live")
+    local enemies=live and live:FindFirstChild("Aggressors")
     for _,slot in ipairs(possible) do
         slot.occupied=false
         if enemies then
@@ -4127,7 +4167,8 @@ end
 
 function MW.currentNpc()
     if MW.rotateEnemies then return MW.rotationNpc() end
-    local folder=getEnemies()
+    local live=workspace:FindFirstChild("Animal_Live")
+    local folder=live and live:FindFirstChild("Aggressors")
     if not folder then return nil end
     -- Keep the live instance until it dies: never switch NPCs mid-combat.
     if MW.activeNPC and MW.isLockedNpc(MW.activeNPC) then
@@ -4250,6 +4291,52 @@ function MW.regionalGroundAt(probe,baseY,npc)
     return hit.Position
 end
 
+function MW.detourLanding(npc,id,root,pos,overlap)
+    local character=getCharacter()
+    local route=MW.detourRoute
+    if not route or route.npc~=npc or route.character~=character or os.clock()>route.expires
+        or horizontalDistance(pos,route.target)>12 then
+        local groundY=tonumber(npc:GetAttribute("_GroundY")) or pos.Y-3.2
+        local outward=Vector3.new(root.Position.X-pos.X,0,root.Position.Z-pos.Z)
+        if outward.Magnitude<0.1 then outward=Vector3.new(1,0,0) end
+        local target=Vector3.new(pos.X,groundY+3.2,pos.Z)+outward.Unit*3.3
+        local path
+        local ok=pcall(function()
+            path=game:GetService("PathfindingService"):CreatePath({AgentRadius=2,AgentHeight=5,AgentCanJump=true,WaypointSpacing=6})
+            path:ComputeAsync(root.Position,target)
+        end)
+        if not MW.worldFarmValid(id) or getCharacter()~=character or MW.activeNPC~=npc then return nil end
+        if not ok or not path or path.Status~=Enum.PathStatus.Success then
+            PRO.log("Farm XP: contorno sem rota disponível; mantendo alvo")
+            return nil
+        end
+        route={npc=npc,character=character,target=pos,points=path:GetWaypoints(),index=1,expires=os.clock()+15}
+        MW.detourRoute=route
+        PRO.log("Farm XP: rota de contorno planejada ("..#route.points.." pontos)")
+    end
+    while route.index<=#route.points do
+        local waypoint=route.points[route.index].Position
+        if horizontalDistance(root.Position,waypoint)<2 and math.abs(root.Position.Y-waypoint.Y)<6 then
+            route.index+=1
+        else
+            local delta=Vector3.new(waypoint.X-root.Position.X,0,waypoint.Z-root.Position.Z)
+            local probe=waypoint
+            if delta.Magnitude>18 then probe=root.Position+delta.Unit*18 end
+            local ground=MW.regionalGroundAt(probe,root.Position.Y,npc)
+            if not ground then MW.detourRoute=nil;return nil end
+            local point=Vector3.new(probe.X,ground.Y+3.2,probe.Z)
+            if (point-root.Position).Magnitude>28 or not MW.rotationOrigin
+                or horizontalDistance(point,MW.rotationOrigin)>650
+                or not MW.regionalLandingClear(point,overlap) then
+                MW.detourRoute=nil;return nil
+            end
+            return point
+        end
+    end
+    MW.detourRoute=nil
+    return nil
+end
+
 -- Travel to distant regional targets in bounded, floor-checked steps.
 function MW.regionalSteps(npc,id)
     local character=getCharacter()
@@ -4264,7 +4351,16 @@ function MW.regionalSteps(npc,id)
         local distance=horizontalDistance(root.Position,pos)
         local targetGround=tonumber(npc:GetAttribute("_GroundY"))
         local targetY=targetGround and targetGround+3.2 or pos.Y
-        if distance<=30 and math.abs(root.Position.Y-targetY)<=8 then return true end
+        local nearbyBlocked=false
+        if distance<=30 and math.abs(root.Position.Y-targetY)<=8 then
+            local params=RaycastParams.new()
+            params.FilterType=Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances={character,npc}
+            params.RespectCanCollide=true;params.IgnoreWater=true
+            local goal=Vector3.new(pos.X,targetY,pos.Z)
+            nearbyBlocked=workspace:Raycast(root.Position,goal-root.Position,params)~=nil
+            if not nearbyBlocked then return true end
+        end
         local delta=Vector3.new(pos.X-root.Position.X,0,pos.Z-root.Position.Z)
         if delta.Magnitude<0.1 then delta=Vector3.new(1,0,0) end
         local forward=delta.Unit
@@ -4274,8 +4370,11 @@ function MW.regionalSteps(npc,id)
         overlap.FilterDescendantsInstances={character,npc}
         overlap.RespectCanCollide=true
         local point
+        if nearbyBlocked or (MW.detourRoute and MW.detourRoute.npc==npc) then
+            point=MW.detourLanding(npc,id,root,pos,overlap)
+        end
         -- Try shorter and lateral landing points instead of cancelling the target.
-        for _,length in ipairs({20,12,6}) do
+        for _,length in ipairs((point or nearbyBlocked) and {} or {20,12,6}) do
             for _,offset in ipairs({0,0.6,-0.6,1.2,-1.2}) do
                 local direction=(forward+side*offset).Unit
                 local probe=root.Position+direction*math.min(length,math.max(3,distance-5))
@@ -4292,8 +4391,10 @@ function MW.regionalSteps(npc,id)
             end
             if point then break end
         end
+        if not point then point=MW.detourLanding(npc,id,root,pos,overlap) end
+        if not MW.worldFarmValid(id) or getCharacter()~=character then return false end
         if not point then
-            PRO.log("Farm XP: sem ponto intermediário livre; mantendo o mesmo alvo")
+            PRO.log("Farm XP: sem ponto direto ou de contorno; mantendo o mesmo alvo")
             return false
         end
         if not MW.worldFarmValid(id) or getCharacter()~=character then return false end
@@ -4324,7 +4425,7 @@ function MW.approachOnce(npc,id)
     end
     local char,root,hum=getCharacter(),getRoot(),getHumanoid()
     local pos=enemyPosition(npc)
-    if not char or not root or not hum or not pos then return false end
+    if not MW.worldFarmValid(id) or not char or not root or not hum or hum.Health<=0 or not pos then return false end
     local flat=horizontalDistance(root.Position,pos)
     if MW.lastApproachedNPC==npc then
         -- Never repeat teleports to the SAME living instance after rollback.
@@ -4347,6 +4448,7 @@ function MW.approachOnce(npc,id)
         if boxOk then feetGap=math.clamp(root.Position.Y-(boxCF.Position.Y-boxSize.Y/2),2,5) end
         local landed=false
         for _,dir in ipairs(dirs) do
+            if not MW.worldFarmValid(id) or getCharacter()~=char or hum.Health<=0 then return false end
             local destXZ=pos+dir*3.3
             local ground=MW.groundAt(destXZ,npc)
             if ground and math.abs(ground.Y-pos.Y)<=9 then
@@ -4354,6 +4456,7 @@ function MW.approachOnce(npc,id)
                 hum:MoveTo(root.Position)
                 char:PivotTo(CFrame.lookAt(landing,Vector3.new(pos.X,landing.Y,pos.Z)))
                 task.wait(0.25)
+                if not MW.worldFarmValid(id) or getCharacter()~=char then return false end
                 root=getRoot()
                 if root and horizontalDistance(root.Position,landing)<5.5 then
                     landed=true
@@ -4417,6 +4520,7 @@ function MW.findLoot()
 end
 
 function MW.collectLoot(id)
+    if not MW.worldFarmValid(id) then return false end
     local drop=MW.findLoot()
     if not drop then return false end
     local root,hum,char=getRoot(),getHumanoid(),getCharacter()
@@ -4430,20 +4534,25 @@ function MW.collectLoot(id)
         char:PivotTo(CFrame.new(drop.pos+Vector3.new(0,2.5,0)))
         task.wait(0.18)
     end
+    if not MW.worldFarmValid(id) or getCharacter()~=char then return false end
     root=getRoot()
     if not root or not drop.prompt.Parent or not drop.prompt.Enabled
         or (root.Position-drop.pos).Magnitude>reach then
         MW.dropAttempts[drop.obj]=os.clock()+1.1
         return true
     end
+    if not MW.worldFarmValid(id) then return false end
     local fired=false
     if type(fireproximityprompt)=="function" then
         fired=pcall(fireproximityprompt,drop.prompt)
     end
+    if not MW.worldFarmValid(id) then return false end
     if not fired then
         pcall(function() drop.prompt:InputHoldBegin() end)
         task.wait(math.max(0.08,math.min(1,drop.prompt.HoldDuration+0.10)))
+        -- Release an already-started hold even on cancellation.
         pcall(function() drop.prompt:InputHoldEnd() end)
+        if not MW.worldFarmValid(id) then return false end
     end
     local stop=os.clock()+0.7
     while MW.worldFarmValid(id) and os.clock()<stop do
@@ -4656,7 +4765,7 @@ end
 function MW.bossApproach(npc,id)
     local root,hum,char=getRoot(),getHumanoid(),getCharacter()
     local pos=enemyPosition(npc)
-    if not root or not hum or not char or not pos then return false end
+    if not MW.worldFarmValid(id) or not root or not hum or hum.Health<=0 or not char or not pos then return false end
     local dist=horizontalDistance(root.Position,pos)
     if dist>38 then return false end
     if dist>6 then
@@ -4668,6 +4777,7 @@ function MW.bossApproach(npc,id)
         if boxOk then feetGap=math.clamp(root.Position.Y-(boxCF.Position.Y-boxSize.Y/2),2,5) end
         local arrived=false
         for _,dir in ipairs(dirs) do
+            if not MW.worldFarmValid(id) or getCharacter()~=char or hum.Health<=0 then return false end
             local landXZ=pos+dir*3.3
             local ground=MW.groundAt(landXZ,npc)
             if ground and math.abs(ground.Y-pos.Y)<=10 then
@@ -4675,6 +4785,7 @@ function MW.bossApproach(npc,id)
                 hum:MoveTo(root.Position)
                 char:PivotTo(CFrame.lookAt(land,Vector3.new(pos.X,land.Y,pos.Z)))
                 task.wait(0.30)
+                if not MW.worldFarmValid(id) or getCharacter()~=char then return false end
                 root=getRoot()
                 if root and horizontalDistance(root.Position,pos)<7 then
                     arrived=true
@@ -4962,13 +5073,16 @@ function MW.fight(npc,id)
         local vert=math.abs(root.Position.Y-pos.Y)
         if not MW.rotateEnemies and MW.worldAutoLoot and MW.findLoot() then
             MW.collectLoot(id)
+            if not MW.worldFarmValid(id) then return end
             root=getRoot()
             if not root then return end
             flat=horizontalDistance(root.Position,pos)
             vert=math.abs(root.Position.Y-pos.Y)
         end
         if MW.rotateEnemies and os.clock()-math.max(lastHit,lastRecovery)>=6 and (attacks>=3 or vert>8) then
-            if MW.repositionTarget(npc,id) then
+            local recovered=MW.repositionTarget(npc,id)
+            if not MW.worldFarmValid(id) then return end
+            if recovered then
                 lastRecovery=os.clock() -- recovery grace; lastHit still measures real HP changes
                 prevHp=npc:GetAttribute("Health") or prevHp
                 nextMove=os.clock()+0.6
@@ -5107,6 +5221,7 @@ function MW.stopWorldFarm()
     MW.worldFarmSession+=1
     MW.activeNPC=nil
     MW.lastApproachedNPC=nil
+    MW.detourRoute=nil
     MW.lockedSpawn=nil
     MW.cachedBoss=nil
     MW.dropOrigins={}
@@ -5172,7 +5287,7 @@ function MW.setWorldFarmMode(mode,enabled)
     end
     if not MW.worldFarmRunning then
         MW.dropOrigins={}
-        MW.dropAttempts={}
+        MW.dropAttempts=setmetatable({},{__mode="k"})
         MW.worldFarmSession+=1
         MW.worldFarmRunning=true
         MW.worldFarmStartedAt=os.clock()
@@ -5380,7 +5495,8 @@ do
     identity:Button({Title="Parar todas as automações",Icon="square",Callback=function()
         onSpeedrunToggle(false)
         if MW.stopWorldFarm then MW.stopWorldFarm() end
-        AS.enabled=false; AS.live=false
+        AS.enabled=false; AS.live=false; AS.cancel()
+        if AS.module and type(AS.module.Get)=="function" and AS.module:Get() then AS.module:Set(false) end
         PRO.log("Parada de todas as automações solicitada")
     end})
     identity:Slider({Title="Velocidade mínima até a porta (studs/s)",Min=16,Max=40,Step=2,Default=24,
@@ -5395,7 +5511,7 @@ do
     local diag=tab:Section({Title="Diagnóstico do hub e do farm",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.16 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.17 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
