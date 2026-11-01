@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.24]",message)
+    print("[Nerfangel V3.25]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.24 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.25 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1563,16 +1563,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.24 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.25 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.24 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.25 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.24 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.25 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1583,7 +1583,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.24 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.25 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -5629,7 +5629,7 @@ do
     local diag=tab:Section({Title="Diagnóstico do hub e do farm",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.24 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.25 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -6904,4 +6904,267 @@ do
         if T.hotkeyConnection then T.hotkeyConnection:Disconnect()end
         T.stop("Hub encerrado")
     end)
+end
+
+-- Passive, bounded diagnostic recording. No chat, passwords, input injection or upload.
+do
+    local R={active=false,token=0,autoWithFarm=true,timeLimit=false,duration=300,interval=1,connections={},cache={},counts={}}
+    PRO.recorder=R
+    local Http=game:GetService("HttpService")
+    local function buffer(capacity) return {capacity=capacity,first=1,size=0,total=0,items={}} end
+    R.events=buffer(1000);R.samples=buffer(900)
+    function R.push(queue,item)
+        local index=(queue.first+queue.size-1)%queue.capacity+1
+        if queue.size==queue.capacity then index=queue.first;queue.first=queue.first%queue.capacity+1 else queue.size+=1 end
+        queue.items[index]=item;queue.total+=1
+    end
+    function R.rows(queue)
+        local result={}
+        for i=0,queue.size-1 do result[#result+1]=queue.items[(queue.first+i-1)%queue.capacity+1] end
+        return result
+    end
+    function R.vector(value)
+        return {math.floor(value.X*100+0.5)/100,math.floor(value.Y*100+0.5)/100,math.floor(value.Z*100+0.5)/100}
+    end
+    function R.safe(value,depth,seen)
+        depth=depth or 0;seen=seen or {}
+        local kind=typeof(value)
+        if kind=="string" then return value:sub(1,240) end
+        if kind=="number" then return value==value and math.abs(value)<math.huge and value or tostring(value) end
+        if kind=="boolean" or kind=="nil" then return value end
+        if kind=="Vector3" then return R.vector(value) end
+        if kind=="Instance" then return value:GetFullName() end
+        if kind~="table" then return tostring(value):sub(1,180) end
+        if depth>=3 or seen[value] then return "<limite>" end
+        seen[value]=true
+        local out,count={},0
+        for key,entry in pairs(value) do
+            count+=1;if count>(depth==0 and 100 or 24) then out._limit=true;break end
+            out[tostring(key):sub(1,80)]=R.safe(entry,depth+1,seen)
+        end
+        seen[value]=nil
+        return out
+    end
+    function R.encode(value)
+        local ok,result=pcall(Http.JSONEncode,Http,value)
+        return ok and result or '{"erro":"serializacao"}'
+    end
+    function R.add(kind,data)
+        if not R.active then return end
+        local row={time=math.floor((os.clock()-R.started)*100)/100,kind=kind,data=R.safe(data)}
+        R.push(R.events,row);R.counts[kind]=(R.counts[kind] or 0)+1
+    end
+    function R.changed(key,kind,data)
+        if not R.active then return end
+        local cleaned=R.safe(data)
+        local encoded=R.encode(cleaned)
+        if R.cache[key]~=encoded then R.cache[key]=encoded;R.add(kind,cleaned) end
+    end
+    function R.label(message)
+        pcall(function()R.stateLabel:SetValue(message)end)
+    end
+    function R.sample()
+        local char,root,hum=getCharacter(),getRoot(),getHumanoid()
+        local tower=PRO.tower
+        local row={time=math.floor((os.clock()-R.started)*100)/100,kind="sample",data={}}
+        local data=row.data
+        if root then
+            data.position=R.vector(root.Position);data.look=R.vector(root.CFrame.LookVector)
+            data.up=R.vector(root.CFrame.UpVector);data.velocity=R.vector(root.AssemblyLinearVelocity)
+            if R.previousPosition and R.previousCharacter==char then
+                local distance=(root.Position-R.previousPosition).Magnitude
+                if distance>20 then R.add("deslocamento_amostrado",{distance=distance,from=R.vector(R.previousPosition),to=data.position}) end
+            end
+            R.previousPosition=root.Position;R.previousCharacter=char
+        end
+        if hum then data.health=hum.Health;data.maxHealth=hum.MaxHealth;data.state=hum:GetState().Name;data.platformStand=hum.PlatformStand;data.autoRotate=hum.AutoRotate end
+        local tool=getWeapon()
+        data.weapon=tool and tool.Name or "none"
+        R.changed("weapon","arma_equipada",tool and {name=tool.Name,attributes=tool:GetAttributes()} or {name="none"})
+        if tower then
+            local phase,floor,button=tower.readUi()
+            data.tower={active=tower.active,phase=phase,floor=floor or tower.floor,wave=tower.wave,waves=tower.waves,run=tower.run,
+                height=tower.airHeight,noclip=tower.airNoclip,unstick=tower.unstickActive,aura=tower.auraMode,
+                target=tower.target and tower.target:GetAttribute("Animal"),targetHealth=tower.target and tower.target:GetAttribute("Health"),
+                arena=tower.arena and tower.arena:GetFullName()}
+            R.changed("tower-state","estado_torre",{active=tower.active,phase=phase,floor=data.tower.floor,run=tower.run,button=button and button:GetFullName(),status=tower.lastStatus})
+            local folder=tower.node(workspace,"Animal_Live","Aggressors")
+            local nearby,nearest,distance={},nil,nil
+            if folder and root then
+                local count=0
+                for _,npc in ipairs(folder:GetChildren()) do
+                    if npc:IsA("Model") and type(npc:GetAttribute("Health"))=="number" then
+                        local pos=enemyPosition(npc)
+                        local d=pos and (root.Position-pos).Magnitude
+                        if d and d<=220 then
+                            count+=1
+                            if count<=24 then nearby[#nearby+1]={id=npc.Name,animal=npc:GetAttribute("Animal"),tier=npc:GetAttribute("Tier"),health=npc:GetAttribute("Health"),run=npc:GetAttribute("_TowerRun"),position=R.vector(pos)} end
+                            if not distance or d<distance then nearest,distance=npc,d end
+                        end
+                    end
+                end
+                data.nearbyCount=count
+                if nearest then
+                    local pos=enemyPosition(nearest)
+                    data.nearest={id=nearest.Name,animal=nearest:GetAttribute("Animal"),health=nearest:GetAttribute("Health"),distance=distance,heightDifference=root.Position.Y-pos.Y}
+                end
+            end
+            data.npcs=nearby
+        end
+        R.push(R.samples,row)
+    end
+    function R.inspectUi()
+        local tower=PRO.tower
+        if not tower then return end
+        local snapshot,buttons={},0
+        for _,screen in ipairs(playerGui:GetChildren()) do
+            local lower=screen.Name:lower()
+            if screen:IsA("ScreenGui") and screen.Enabled and (lower:find("tower",1,true) or screen.Name=="QuickSwitch") then
+                for _,obj in ipairs(screen:GetDescendants()) do
+                    if tower.visible(obj) then
+                        if (obj:IsA("TextLabel") or obj:IsA("TextButton")) and obj.Text~="" and #snapshot<75 then
+                            snapshot[#snapshot+1]={path=obj:GetFullName(),text=obj.Text:sub(1,180)}
+                        end
+                        if obj:IsA("GuiButton") and not R.observedButtons[obj] and buttons<60 and #R.connections<180 then
+                            buttons+=1;R.observedButtons[obj]=true
+                            R.connections[#R.connections+1]=obj.Activated:Connect(function()
+                                local ok,err=pcall(function()R.add("clique_observado",{path=obj:GetFullName(),text=tower.text(obj),attributes=obj:GetAttributes()})end)
+                                if not ok then R.add("erro_observador",{message=tostring(err)})end
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(snapshot,function(a,b)return a.path<b.path end)
+        R.changed("ui","interface_torre_R",snapshot)
+        local root=getRoot()
+        if root then
+            local drops={}
+            for _,drop in ipairs(getNearbyDrops(root.Position)) do
+                if #drops>=15 then break end
+                drops[#drops+1]={path=drop.model:GetFullName(),id=tower.dropIdentity(drop),attributes=drop.model:GetAttributes(),position=R.vector(drop.aura.Position),enabled=drop.prompt.Enabled}
+            end
+            R.changed("drops","drops_proximos",drops)
+        end
+    end
+    function R.disconnect()
+        for _,connection in ipairs(R.connections) do pcall(function()connection:Disconnect()end) end
+        R.connections={};R.observedButtons=setmetatable({},{__mode="k"})
+    end
+    function R.stop(reason)
+        if R.active then R.add("fim",{reason=reason or "manual"});R.ended=os.clock();R.active=false;R.token+=1 end
+        R.disconnect()
+        if R.module and not R.sync then
+            R.sync=true;pcall(function()R.module:Set(false)end);R.sync=false
+        end
+        R.label("Gravação parada — relatório disponível")
+    end
+    function R.start()
+        if R.active then return end
+        R.disconnect();R.events=buffer(1000);R.samples=buffer(900);R.cache={};R.counts={}
+        R.started=os.clock();R.ended=nil;R.previousPosition=nil;R.previousCharacter=nil
+        R.active=true;R.token+=1
+        R.add("inicio",{version="V3.25",placeId=game.PlaceId,duration=R.duration,interval=R.interval,timeLimit=R.timeLimit})
+        local rs=game:GetService("ReplicatedStorage")
+        local tower=PRO.tower
+        local paths={{"Tower_Engine","Remotes","Push"},{"Dungeon_Engine","Remotes","Scene"},{"HalloweenDungeon_Engine","Remotes","Scene"}}
+        for _,path in ipairs(paths) do
+            local remote=tower and tower.node(rs,table.unpack(path))
+            if remote and remote:IsA("RemoteEvent") then
+                R.connections[#R.connections+1]=remote.OnClientEvent:Connect(function(...)
+                    local ok,err=pcall(function(...)R.add("evento_recebido",{path=remote:GetFullName(),args=table.pack(...)})end,...)
+                    if not ok then R.add("erro_observador",{message=tostring(err)})end
+                end)
+            end
+        end
+        if R.module and not R.sync then R.sync=true;pcall(function()R.module:Set(true)end);R.sync=false end
+        local token=R.token
+        task.spawn(function()
+            local tick=0
+            while R.active and R.token==token and gui.Parent and (not R.timeLimit or os.clock()-R.started<R.duration) do
+                local ok,err=pcall(function()R.sample();if tick%2==0 then R.inspectUi()end end)
+                if not ok then R.changed("observer-error","erro_observador",{message=tostring(err)})end
+                tick+=1
+                R.label("Gravando "..math.floor(os.clock()-R.started).." s | amostras "..R.samples.size.." | eventos "..R.events.size)
+                task.wait(R.interval)
+            end
+            if R.active and R.token==token then R.stop("limite de tempo")end
+        end)
+    end
+    function R.report(summary)
+        local duration=R.started and ((R.ended or os.clock())-R.started) or 0
+        local lines={"NERFANGEL GRAVADOR V3.25",R.encode({placeId=game.PlaceId,active=R.active,seconds=duration,eventsRetained=R.events.size,eventsTotal=R.events.total,samplesRetained=R.samples.size,samplesTotal=R.samples.total,counts=R.counts}),
+            "Posições e HP são observações do cliente. Deslocamento não prova rollback. Sem chat, vídeo ou envio automático."}
+        local rows=R.rows(R.events)
+        if not summary then for _,row in ipairs(R.rows(R.samples))do rows[#rows+1]=row end end
+        table.sort(rows,function(a,b)return a.time<b.time end)
+        local start=summary and math.max(1,#rows-59) or 1
+        for i=start,#rows do lines[#lines+1]=R.encode(rows[i])end
+        return table.concat(lines,"\n")
+    end
+    function R.copy(summary)
+        local report=R.report(summary)
+        local ok=type(setclipboard)=="function" and pcall(setclipboard,report)
+        if not ok then for line in report:gmatch("[^\n]+")do print(line)end end
+        R.label(ok and "Relatório copiado — cole na conversa" or "Relatório disponível no console F9")
+    end
+    function R.wrap(name,makeData)
+        local tower=PRO.tower
+        local original=tower and tower[name]
+        if type(original)~="function" then return end
+        tower[name]=function(...)
+            if not R.active then return original(...)end
+            local args=table.pack(...)
+            local root=getRoot();local before=root and root.Position
+            local result=table.pack(original(...))
+            pcall(function()
+                local data=makeData(args,result,before)
+                if data then R.changed("call:"..name,"acao_"..name,data)end
+            end)
+            return table.unpack(result,1,result.n)
+        end
+    end
+    R.wrap("airTrack",function(args,result,before)
+        local root=getRoot();local distance=root and before and (root.Position-before).Magnitude or 0
+        if distance<=2 and result[1] then return nil end
+        return {target=args[1] and args[1].Name,confirmed=result[1]==true,distance=distance,before=before and R.vector(before),after=root and R.vector(root.Position)}
+    end)
+    R.wrap("quickSwitchEquip",function(args,result)return {requested=args[1],equipped=result[1] and result[1].Name,reason=result[2]}end)
+    R.wrap("click",function(args,result)return {phase=args[3],sent=result[1],reason=result[2]}end)
+    local originalLog=PRO.log
+    PRO.log=function(message)
+        pcall(function()R.add("hub_log",{message=tostring(message)})end)
+        return originalLog(message)
+    end
+    if PRO.tower then
+        local originalStart=PRO.tower.start
+        PRO.tower.start=function(...)
+            if R.autoWithFarm and not R.active then R.start()end
+            return originalStart(...)
+        end
+    end
+    local tab=Window:Tab({Title="Gravador de diagnóstico",Icon="notebook-pen",Columns=1})
+    local controls=tab:Section({Title="Gravar enquanto jogo",Icon="activity"})
+    controls:Paragraph({Title="Observação do cliente",Content="Registra movimento, vida, NPCs próximos, arma equipada, menus da torre/R, drops e eventos recebidos. Não grava vídeo, chat nem senhas; não envia nada automaticamente. Pode acompanhar você jogando ou o nosso farm."})
+    R.module=controls:Toggle({Title="Gravar diagnóstico agora",Default=false,Callback=function(v)
+        if R.sync then return end
+        if v then R.start()else R.stop("manual")end
+    end})
+    controls:Toggle({Title="Iniciar gravação junto do Tower Farm",Default=true,Callback=function(v)R.autoWithFarm=v==true end})
+    controls:Toggle({Title="Parar automaticamente após o tempo definido",Default=false,Callback=function(v)R.timeLimit=v==true end})
+    controls:Slider({Title="Duração máxima em minutos",Min=1,Max=15,Step=1,Default=5,Callback=function(v)R.duration=math.clamp(tonumber(v)or 5,1,15)*60 end})
+    controls:Slider({Title="Intervalo das amostras em segundos",Min=0.5,Max=3,Step=0.5,Default=1,Callback=function(v)R.interval=math.clamp(tonumber(v)or 1,0.5,3)end})
+    R.stateLabel=controls:Label({Text="Gravação",Value="Parada — inicia com Tower Farm ou manualmente"})
+    controls:Button({Title="Parar gravação",Icon="square",Callback=function()R.stop("manual")end})
+    controls:Button({Title="Copiar relatório completo",Icon="clipboard",Callback=function()R.copy(false)end})
+    controls:Button({Title="Copiar resumo dos últimos eventos",Icon="clipboard",Callback=function()R.copy(true)end})
+    controls:Button({Title="Salvar relatório .txt no executor",Icon="save",Callback=function()
+        if type(writefile)~="function" then R.label("Executor sem writefile — use Copiar relatório");return end
+        local name="Nerfangel_Gravacao_"..os.date("%Y%m%d_%H%M%S")..".txt"
+        local ok,err=pcall(writefile,name,R.report(false))
+        R.label(ok and "Salvo na pasta de arquivos/workspace do executor: "..name or "Falha ao salvar: "..tostring(err))
+    end})
+    controls:Paragraph({Title="Limites do registro",Content="Grava continuamente até parar; o limite de tempo é opcional. Mantém até 900 amostras e 1.000 eventos recentes. Uma nova gravação substitui a anterior. Copie ou salve antes de recarregar/sair. Eu só recebo os dados quando você os envia aqui; o diagnóstico não garante observar toda a lógica do servidor ou de outros scripts."})
+    gui.Destroying:Connect(function()R.stop("hub encerrado")end)
 end
