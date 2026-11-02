@@ -48,7 +48,7 @@ hammer=tool('Crab Hammer');sword=tool('Halloween Greatsword');equipped=sword
 UIS={GetFocusedTextBox=function()return nil end};VIM={};game={GetService=function(_,n)if n=='UserInputService'then return UIS elseif n=='GuiService'then return {GetGuiInset=function()return V(0,0)end}else return VIM end end}
 '''
 def run(name,case):
- l=LuaRuntime();l.execute(setup);l.execute(core+'\nTEST=T;realReadUi=T.readUi');l.execute('TEST.active=true;TEST.token=1;TEST.floor=90;TEST.readUi=function()return "fight"end');l.execute(case);print('PASS',name)
+ l=LuaRuntime();l.execute(setup);l.execute(core+'\nTEST=T;realReadUi=T.readUi');l.execute('TEST.active=true;TEST.token=1;TEST.floor=90;TEST.centerMode=false;TEST.readUi=function()return "fight"end');l.execute(case);print('PASS',name)
 run('R radial caption alias, release selection, equipment confirmation, cancellation and focus', '''
 local T=TEST;local r=obj('QuickSwitch','ScreenGui',playerGui);r.Enabled=false;r.IgnoreGuiInset=true
 local canvas=obj('canvas','Frame',r);local w=obj('wheel','Frame',canvas);local caption=obj('Caption','TextLabel',w)
