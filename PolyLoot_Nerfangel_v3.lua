@@ -193,7 +193,7 @@ PRO.errors={}
 function PRO.log(message)
     table.insert(PRO.errors,os.date("%H:%M:%S").." "..tostring(message))
     if #PRO.errors>60 then table.remove(PRO.errors,1) end
-    print("[Nerfangel V3.25]",message)
+    print("[Nerfangel V3.26]",message)
 end
 function PRO.roomNumber(name)
     return tonumber(name:match("^(%d+)_"))
@@ -562,7 +562,7 @@ OasisUI=portugueseUI(OasisUI,false)
 
 local Window = OasisUI:CreateWindow({
     Title = "NERFANGEL HUB",
-    Subtitle = "Nerfangel V3.25 BETA | Dungeon + Main World + Auto Sell",
+    Subtitle = "Nerfangel V3.26 BETA | Dungeon + Main World + Auto Sell",
     Folder = "PolyLootSpeedrun",
     GuiName = "PolyLootOasisV5",
     Icon = "swords",
@@ -1563,16 +1563,16 @@ onDungeonSelected = function(value)
 
     if selectedDungeonId == "dark" then
         selectorInfo:SetContent("Dark Dungeon BETA: entre manualmente antes de ativar. Se o mapa não for reconhecido, use Diagnóstico na aba Nerfangel.")
-        Window:SetSubtitle("Nerfangel V3.25 | Dark Dungeon BETA")
+        Window:SetSubtitle("Nerfangel V3.26 | Dark Dungeon BETA")
     elseif selectedDungeonId == "halloween" then
         selectorInfo:SetContent(
             "Halloween Dungeon 2026 selected. Choose Speedrun, Auto Replay, and Anti-AFK below."
         )
-        Window:SetSubtitle("Nerfangel V3.25 | Halloween")
+        Window:SetSubtitle("Nerfangel V3.26 | Halloween")
         debugPrint("Dungeon selected:", "Halloween Dungeon")
     else
         selectorInfo:SetContent("Choose a dungeon to display its available farming functions.")
-        Window:SetSubtitle("Nerfangel V3.25 BETA | Dungeon + Main World + Auto Sell")
+        Window:SetSubtitle("Nerfangel V3.26 BETA | Dungeon + Main World + Auto Sell")
         debugPrint("Dungeon selection cleared")
     end
 end
@@ -1583,7 +1583,7 @@ onDungeonSelected(dungeonSelector:Get())
 
 -- Universal status and license page retained independently from the selected dungeon.
 local versionSection = statusTab:Section({ Title = "Script Version", Icon = "info" })
-versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.25 BETA" })
+versionSection:Label({ Text = "Version", Value = "Poly Loot Nerfangel V3.26 BETA" })
 local live = statusTab:Section({ Title = "Dungeon Statistics", Icon = "chart-no-axes-column" })
 local roomLabel = textProxy(live:Label({ Text = "Room", Value = "Room: - / 18" }))
 local waveLabel = textProxy(live:Label({ Text = "Wave", Value = "Wave: -" }))
@@ -5629,7 +5629,7 @@ do
     local diag=tab:Section({Title="Diagnóstico do hub e do farm",Icon="scan"})
     local diagLabel=diag:Label({Text="Resultado",Value="Entre manualmente na Dark e gere o relatório."})
     local function report()
-        local lines={"NERFANGEL V3.25 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
+        local lines={"NERFANGEL V3.26 DIAGNOSTICO", "PlaceId="..tostring(game.PlaceId),
             "Perfil="..tostring(PRO.dungeonId),"Sala="..currentRoom.."/"..PRO.roomCount,
             "Rodando="..tostring(running),"Scene="..tostring(sceneEventsAvailable)}
         local function add(value) if #lines<350 then table.insert(lines,tostring(value)) end end
@@ -5731,6 +5731,16 @@ do
             if t.arena then add("TORRE arena="..t.arena:GetFullName()) end
             add("TORRE aéreo="..tostring(t.airMode).." altura="..tostring(t.airHeight).." noclip="..tostring(t.airNoclip).." contínuo="..tostring(t.continuousAttack).." intervalo="..tostring(t.attackPeriod).." aura="..tostring(t.auraMode).." raio="..tostring(t.auraRadius).." próximos="..tostring(t.auraNearby).." slotPumpkin="..tostring(t.weaponSlots and t.weaponSlots.sword).." slotHammer="..tostring(t.weaponSlots and t.weaponSlots.hammer).." armas="..tostring(t.weaponInfo))
             add("TORRE entrada="..tostring(t.entryEnabled).." de_qualquer_lugar="..tostring(t.launchAnywhere).." repetir_derrota="..tostring(t.repeatDefeat).." porta="..tostring(t.entryPrompt).." destravar="..tostring(t.unstickActive))
+            add("TORRE centro="..tostring(t.centerMode).." altura_efetiva="..tostring(t.centerHeight and t.centerHeight()).." ajuste="..tostring(t.centerLift).." ancora="..tostring(t.centerAnchor))
+            if t.centerMetrics then
+                local m=t.centerMetrics
+                add("CENTRO eventos_HP="..m.damageEvents.." HP_perdido="..m.healthLost.." quedas_HP_NPC_observadas="..m.npcHealthDrops)
+                for height,data in pairs(m.heights)do add("CENTRO altura="..height.." segundos="..math.floor(data.seconds).." eventos_HP="..data.damageEvents.." HP_perdido="..data.healthLost)end
+                for name,data in pairs(m.mobs)do
+                    local parts={};for k,v in pairs(data)do parts[#parts+1]=k.."="..tostring(v)end
+                    add("CENTRO MOB "..name.." "..table.concat(parts," "))
+                end
+            end
             local count=0
             for _,screen in ipairs(playerGui:GetChildren())do
                 if screen:IsA("ScreenGui")and screen.Name:lower():find("tower",1,true)then
@@ -5780,6 +5790,7 @@ do
     T.airNoclip=true;T.continuousAttack=true;T.attackPeriod=0.25
     T.airTeleport=true;T.airTeleportPeriod=0.25;T.nextAirTeleport=0
     T.auraMode=false;T.auraRadius=12;T.auraNearby=0
+    T.centerMode=true;T.centerAutoHeight=true;T.centerMaxHeight=16;T.centerLift=0
     T.enemyProfiles={};T.selectedWeapons={};T.collectNames={};T.collectAll=true
     T.combatLoot=true;T.relativeHeight=true;T.lieFlat=true;T.faceEnemy=true;T.flySpeed=40
     T.unstick=true;T.unstickAfter=6;T.repeatDefeat=false;T.entryEnabled=false;T.launchAnywhere=false
@@ -6427,7 +6438,7 @@ do
         end
     end
     function T.updateNoclip(char,id)
-        if not (T.airNoclip or T.unstickActive) or not (T.airMode or T.unstickActive) or not T.valid(id) then T.releaseNoclip();return end
+        if not (T.airNoclip or T.unstickActive) or not (T.airMode or T.unstickActive or T.centerMode) or not T.valid(id) then T.releaseNoclip();return end
         if T.noclipState and T.noclipState.char==char then return end
         T.releaseNoclip()
         local state={char=char,parts=setmetatable({},{__mode="k"}),connections={}}
@@ -6448,7 +6459,7 @@ do
             end
         end))
         table.insert(state.connections,game:GetService("RunService").PreSimulation:Connect(function()
-            if not T.valid(id) or not (T.airMode or T.unstickActive) or not (T.airNoclip or T.unstickActive) or getCharacter()~=char or T.readUi()~="fight" then
+            if not T.valid(id) or not (T.airMode or T.unstickActive or T.centerMode) or not (T.airNoclip or T.unstickActive) or getCharacter()~=char or T.readUi()~="fight" then
                 T.releaseAir();return
             end
             for part in pairs(state.parts) do
@@ -6499,18 +6510,10 @@ do
             end
         end
     end
-    function T.airTrack(npc,id)
+    function T.prepareAir(point,id)
         local root,hum,char=getRoot(),getHumanoid(),getCharacter()
-        local pos=enemyPosition(npc)
-        if not T.valid(id) or not root or not hum or hum.Health<=0 or not pos or T.readUi()~="fight" then T.releaseAir();return false end
-        if T.airSaved and (T.airSaved.root~=root or T.airSaved.hum~=hum) then T.releaseAir() end
-        local height=T.targetHeight(npc)
-        local base=T.relativeHeight and pos or T.ground(pos)
-        if not base then return false end
-        local point=Vector3.new(pos.X,base.Y+height,pos.Z)
-        local overlap=OverlapParams.new()
-        overlap.FilterType=Enum.RaycastFilterType.Exclude;overlap.FilterDescendantsInstances={char,npc};overlap.RespectCanCollide=true
-        if not (T.airNoclip or T.unstickActive) and not MW.regionalLandingClear(point,overlap) then T.releaseAir();T.status("Espaço acima do alvo bloqueado");return false end
+        if not root or not hum or hum.Health<=0 or not T.valid(id)or T.readUi()~="fight"then return false end
+        if T.airSaved and (T.airSaved.root~=root or T.airSaved.hum~=hum)then T.releaseAir()end
         if not T.airObjects then
             T.airSaved={root=root,hum=hum,autoRotate=hum.AutoRotate,platformStand=hum.PlatformStand}
             T.airObjects={}
@@ -6527,6 +6530,197 @@ do
         end
         T.updateNoclip(char,id)
         hum.AutoRotate=false;hum.PlatformStand=true
+        return true
+    end
+    function T.centerBase()
+        local arena=T.resolveArena()
+        local root=getRoot()
+        if not arena or not root then return nil end
+        local key=tostring(T.run)..":"..T.floor
+        if T.centerAnchor and T.centerAnchorArena==arena and T.centerAnchorKey==key then return T.centerAnchor end
+        local cf=arena:GetBoundingBox()
+        local ys={}
+        local folder=T.node(workspace,"Animal_Live","Aggressors")
+        if folder then
+            for _,npc in ipairs(folder:GetChildren())do
+                local run=npc:GetAttribute("_TowerRun")or npc:GetAttribute("_DungeonRun")
+                local y=npc:GetAttribute("_GroundY")
+                if npc:IsA("Model")and type(y)=="number"and (not T.run or not run or run==T.run)then ys[#ys+1]=y end
+            end
+        end
+        table.sort(ys)
+        local reference=#ys>0 and ys[math.ceil(#ys/2)]or root.Position.Y
+        local params=RaycastParams.new()
+        params.FilterType=Enum.RaycastFilterType.Include;params.FilterDescendantsInstances={arena};params.RespectCanCollide=true;params.IgnoreWater=true
+        local origin=Vector3.new(cf.Position.X,reference+25,cf.Position.Z)
+        local hit
+        for _=1,4 do
+            local candidate=workspace:Raycast(origin,Vector3.new(0,-100,0),params)
+            if not candidate then break end
+            local allowed=#ys>0 and 6 or 8
+            if candidate.Normal.Y>=0.65 and math.abs(candidate.Position.Y-reference)<=allowed then hit=candidate;break end
+            if candidate.Position.Y<reference-allowed then break end
+            origin=candidate.Position-Vector3.new(0,0.25,0)
+        end
+        if not hit then return nil end
+        T.centerAnchor=hit.Position;T.centerAnchorArena=arena;T.centerAnchorKey=key
+        T.centerHpChar=nil;T.centerObservedAt=nil
+        PRO.log("Torre centro: "..tostring(hit.Position))
+        return hit.Position
+    end
+    function T.centerHeight()
+        return math.max(T.airHeight,math.min(T.airHeight+(T.centerLift or 0),T.centerMaxHeight))
+    end
+    function T.centerHold(point,id,npc)
+        local root,char=getRoot(),getCharacter()
+        if not root or not T.valid(id)or T.readUi()~="fight"then return false end
+        if not T.prepareAir(point,id)then return false end
+        T.airPosition.Position=point;T.airPosition.MaxVelocity=0
+        if (root.Position-point).Magnitude>0.75 then
+            if os.clock()<(T.nextCenterMove or 0)then return false end
+            T.nextCenterMove=os.clock()+0.25
+            local floor,anchor=T.floor,T.centerAnchor
+            char:PivotTo(CFrame.lookAt(point,point+Vector3.new(0,-1,0),Vector3.new(1,0,0)))
+            task.wait(0.25)
+            root=getRoot()
+            if not T.valid(id)or getCharacter()~=char or T.floor~=floor or T.centerAnchor~=anchor or T.readUi()~="fight"or not root then return false end
+            if (root.Position-point).Magnitude>3 then
+                T.nextCenterMove=os.clock()+0.75
+                T.status("Chegada ao centro não confirmada — aguardando")
+                return false
+            end
+        end
+        local target=npc and enemyPosition(npc)
+        local aim=target and target-root.Position or Vector3.new(0,-1,0)
+        if not T.faceEnemy then aim=Vector3.new(0,-1,0)end
+        if not T.lieFlat then
+            aim=target and Vector3.new(target.X-root.Position.X,0,target.Z-root.Position.Z)or Vector3.new(0,0,-1)
+        end
+        if aim.Magnitude<0.1 then aim=Vector3.new(0,-1,0)end
+        local up=math.abs(aim.Unit.Y)>0.95 and Vector3.new(1,0,0)or Vector3.new(0,1,0)
+        T.airOrientation.CFrame=CFrame.lookAt(root.Position,root.Position+aim,up)
+        return true
+    end
+    function T.centerObserve()
+        local hum,root,char=getHumanoid(),getRoot(),getCharacter()
+        if not hum or not root then return false end
+        local now=os.clock()
+        local height=T.centerHeight()
+        T.centerMetrics=T.centerMetrics or {damageEvents=0,healthLost=0,npcHealthDrops=0,heights={},mobs={}}
+        local m=T.centerMetrics
+        local key=string.format("%.1f",height)
+        m.heights[key]=m.heights[key]or {seconds=0,damageEvents=0,healthLost=0}
+        local bucket=m.heights[key]
+        if T.centerObservedAt then bucket.seconds=bucket.seconds+math.min(1,math.max(0,now-T.centerObservedAt))end
+        T.centerObservedAt=now
+        local changed=false
+        if T.centerHpChar==char and T.centerHp and hum.Health<T.centerHp then
+            local lost=T.centerHp-hum.Health
+            m.damageEvents=m.damageEvents+1;m.healthLost=m.healthLost+lost
+            bucket.damageEvents=bucket.damageEvents+1;bucket.healthLost=bucket.healthLost+lost
+            PRO.log("Torre centro: HP -"..math.floor(lost).." | altura="..height.." (origem do dano desconhecida)")
+            if T.centerAutoHeight and now>=(T.nextCenterRaise or 0)and height<math.max(T.airHeight,T.centerMaxHeight)then
+                T.centerLift=(T.centerLift or 0)+2;T.nextCenterRaise=now+3;changed=true
+                PRO.log("Torre centro: altura ajustada para "..T.centerHeight())
+            end
+        end
+        T.centerHpChar=char;T.centerHp=hum.Health
+        if now>=(T.nextCenterCatalog or 0)then
+            T.nextCenterCatalog=now+1
+            local folder=T.node(workspace,"Animal_Live","Aggressors")
+            T.centerNpcHp=T.centerNpcHp or setmetatable({},{__mode="k"})
+            local nearby={}
+            if folder then
+                for _,npc in ipairs(folder:GetChildren())do
+                    local hp=npc:GetAttribute("Health")
+                    local run=npc:GetAttribute("_TowerRun")or npc:GetAttribute("_DungeonRun")
+                    if npc:IsA("Model")and type(hp)=="number"and (not T.run or not run or run==T.run)then
+                        local pos=enemyPosition(npc)
+                        if pos and T.inArena(pos)then
+                            local name=T.profileKey(npc)
+                            if not m.mobs[name]and (m.mobCount or 0)<40 then
+                                local data={animal=npc:GetAttribute("Animal"),tier=npc:GetAttribute("Tier"),attackType=npc:GetAttribute("AttackType")}
+                                for _,attribute in ipairs({"AttackRange","AttackRadius","HitRange","AttackHeight"})do
+                                    local value=npc:GetAttribute(attribute)
+                                    if type(value)=="number"then data[attribute]=value end
+                                end
+                                m.mobs[name]=data;m.mobCount=(m.mobCount or 0)+1
+                            end
+                            if T.centerNpcHp[npc]and hp<T.centerNpcHp[npc]then m.npcHealthDrops=m.npcHealthDrops+1;T.centerLastNpcDrop=now end
+                            T.centerNpcHp[npc]=hp
+                            if hp>0 then nearby[name]=true end
+                        end
+                    end
+                end
+            end
+            local names={};for name in pairs(nearby)do names[#names+1]=name end;table.sort(names)
+            T.centerMobSummary=table.concat(names,", ")
+        end
+        return changed
+    end
+    function T.centerTarget(origin)
+        local folder=T.node(workspace,"Animal_Live","Aggressors")
+        if not folder then return nil end
+        local best,priority,distance
+        for _,npc in ipairs(folder:GetChildren())do
+            if T.allowedNpc(npc)then
+                local pos=enemyPosition(npc)
+                local d=pos and horizontalDistance(origin,pos)
+                if d and d<=6 and T.inArena(pos)and math.abs(origin.Y-pos.Y)<=T.centerHeight()+4 then
+                    local p=T.profile(npc)
+                    if not best or p.priority>priority or p.priority==priority and (npc==T.target or best~=T.target and d<distance)then
+                        best,priority,distance=npc,p.priority,d
+                    end
+                end
+            end
+        end
+        return best
+    end
+    function T.centerStep(id)
+        T.unstickActive=false;T.unstickTarget=nil
+        local base=T.centerBase()
+        if not base then T.status("Centro/piso da arena não confirmado — gere diagnóstico");return end
+        local point=base+Vector3.new(0,T.centerHeight(),0)
+        if not T.centerHold(point,id,T.target)then return end
+        if T.centerObserve()then
+            point=base+Vector3.new(0,T.centerHeight(),0)
+            if not T.centerHold(point,id,T.target)then return end
+        end
+        local tool=T.compareOwnedWeapons(id)
+        if not tool then T.status("Centro • equipe uma arma");return end
+        if not T.valid(id)or T.readUi()~="fight"then return end
+        local root=getRoot()
+        local npc=root and T.centerTarget(root.Position)
+        T.target=npc
+        if not npc then
+            T.centerAttackTarget=nil;T.centerAttackSince=nil
+            T.status("Centro • altura "..T.centerHeight().." • aguardando monstros se aproximarem")
+            return
+        end
+        if T.centerAttackTarget~=npc then T.centerAttackTarget=npc;T.centerAttackSince=os.clock()end
+        local pos=enemyPosition(npc)
+        if not root or not pos or (root.Position-point).Magnitude>3 or not T.allowedNpc(npc)or horizontalDistance(root.Position,pos)>6 then return end
+        if not T.centerHold(point,id,npc)then return end
+        if T.valid(id)and T.readUi()=="fight"and T.allowedNpc(npc)and tool.Parent==getCharacter()and tool.Enabled and os.clock()>=T.nextAttack then
+            tool:Activate();T.nextAttack=os.clock()+T.attackInterval(tool)
+        end
+        if os.clock()-math.max(T.centerAttackSince or os.clock(),T.centerLastNpcDrop or 0)>20 then
+            T.status("Centro • sem queda de HP observada; ajuste altura ou arma")
+        else T.status("Centro • "..T.profileKey(npc).." • altura "..T.centerHeight())end
+    end
+    function T.airTrack(npc,id)
+        local root,hum,char=getRoot(),getHumanoid(),getCharacter()
+        local pos=enemyPosition(npc)
+        if not T.valid(id) or not root or not hum or hum.Health<=0 or not pos or T.readUi()~="fight" then T.releaseAir();return false end
+        if T.airSaved and (T.airSaved.root~=root or T.airSaved.hum~=hum) then T.releaseAir() end
+        local height=T.targetHeight(npc)
+        local base=T.relativeHeight and pos or T.ground(pos)
+        if not base then return false end
+        local point=Vector3.new(pos.X,base.Y+height,pos.Z)
+        local overlap=OverlapParams.new()
+        overlap.FilterType=Enum.RaycastFilterType.Exclude;overlap.FilterDescendantsInstances={char,npc};overlap.RespectCanCollide=true
+        if not (T.airNoclip or T.unstickActive) and not MW.regionalLandingClear(point,overlap) then T.releaseAir();T.status("Espaço acima do alvo bloqueado");return false end
+        if not T.prepareAir(point,id)then return false end
         local delta=Vector3.new(pos.X-root.Position.X,0,pos.Z-root.Position.Z)
         local forward=delta.Magnitude>0.1 and delta.Unit or Vector3.new(1,0,0)
         T.airPosition.Position=point
@@ -6666,7 +6860,7 @@ do
     function T.collect(id) return T.filteredCollect(id,false) end
     function T.step(id)
         local phase,floor,button=T.readUi()
-        if phase~="fight" or not (T.airMode or T.unstickActive) then T.releaseAir() end
+        if phase~="fight" or not (T.airMode or T.unstickActive or T.centerMode) then T.releaseAir() end
         if floor and floor~=T.floor then T.floor=floor;T.arena=nil;T.target=nil;T.wave=0;T.waves=0;T.sent={} end
         local phaseChanged=phase~=T.uiPhase
         T.uiPhase=phase
@@ -6711,6 +6905,7 @@ do
             if T.floorLimit>0 and T.floor>=T.floorLimit then T.stop("Andar limite concluído");return end
             if T.autoNext then local sent,reason=T.click(button,id,phase);T.status(sent and "NEXT FLOOR solicitado — aguardando novo andar" or reason) end
         elseif phase=="fight" then
+            if T.centerMode then T.centerStep(id);return end
             if T.combatLoot then T.filteredCollect(id,true) end
             if not T.valid(id) or T.readUi()~="fight" then return end
             local npc=T.selectEnemy()
@@ -6785,6 +6980,7 @@ do
         T.token+=1;T.active=true;T.sent={};T.run=nil;T.floor=0;T.wave=0;T.waves=0;T.winKey=nil;T.lootKey=nil
         T.releaseAir()
         T.weaponFloor=nil;T.weaponRetry=0;T.weaponChoiceId=nil;T.nextAirTeleport=0
+        T.centerAnchor=nil;T.centerLift=0;T.nextCenterMove=0;T.nextCenterRaise=0;T.centerHpChar=nil;T.centerObservedAt=nil;T.centerMetrics=nil;T.centerNpcHp=nil
         T.entrySent=setmetatable({},{__mode="k"});T.nextEntryAt=0;T.deathSince=nil;T.unstickActive=false;T.unstickTarget=nil
         T.nextMove=0;T.nextAttack=0;T.target=nil;T.uiPhase=nil;T.missingSince=nil
         T.connection=push.OnClientEvent:Connect(T.onPush)
@@ -6798,6 +6994,8 @@ do
                         if T.lastProgress~=progress then T.lastProgress=progress;T.progressLabel:SetValue(progress)end
                         local stats="Andares concluídos: "..T.cleared.." | tentativas de coleta: "..(T.lootAttempts or 0)
                         if T.lastStats~=stats then T.lastStats=stats;T.statsLabel:SetValue(stats)end
+                        local centerInfo=T.centerMode and ("Altura "..T.centerHeight().." | HP perdido: "..tostring(T.centerMetrics and math.floor(T.centerMetrics.healthLost)or 0).." | "..tostring(T.centerMobSummary or "aguardando monstros"))or "Modo de perseguir inimigos"
+                        if T.lastCenterInfo~=centerInfo then T.lastCenterInfo=centerInfo;T.centerLabel:SetValue(centerInfo)end
                         local info=T.weaponInfo or "Aguardando combate para comparar bônus"
                         if T.lastWeaponLabel~=info then T.lastWeaponLabel=info;T.weaponLabel:SetValue(info) end
                     end
@@ -6860,6 +7058,14 @@ do
     end})
     enemies:Paragraph({Title="Descoberta automática",Content="Não depende de lista fixa de monstros: reconhece Animal e Tier carregados, incluindo bosses, golems e campeões quando aparecem. Atualize as listas ao encontrar novos inimigos. Excluir um tipo pode impedir concluir o andar. Altura 35 não garante alcance da arma."})
     local movement=tab:Section({Title="4 • Movimento e destravar",Icon="navigation"})
+    movement:Toggle({Title="Ficar no centro — esperar os monstros",Default=true,Callback=function(v)
+        T.centerMode=v==true;T.centerAnchor=nil;T.nextCenterMove=0;T.target=nil;T.unstickActive=false;T.unstickTarget=nil
+        T.releaseAir()
+    end})
+    movement:Toggle({Title="No centro: subir se perder vida",Default=true,Callback=function(v)T.centerAutoHeight=v==true end})
+    movement:Slider({Title="Limite da subida automática",Min=10,Max=35,Step=1,Default=16,Callback=function(v)T.centerMaxHeight=math.clamp(tonumber(v)or 16,10,35)end})
+    movement:Button({Title="Zerar ajuste automático da altura",Icon="refresh-cw",Callback=function()T.centerLift=0;T.nextCenterRaise=0;T.nextCenterMove=0 end})
+    movement:Paragraph({Title="Centro da arena",Content="Mantém X/Z no centro do piso e deixa os inimigos se aproximarem. Usa Altura padrão acima do piso; ignora alturas por espécie, não persegue nem mergulha para destravar e suspende a coleta durante waves. Se perder vida, pode subir 2 studs até o limite. Não identifica quem causou o dano nem garante imunidade; alturas maiores podem tirar a arma de alcance. Monstros de ataque à distância podem não se aproximar."})
     movement:Toggle({Title="Combate aéreo",Default=true,Callback=function(v)T.airMode=v==true;if not T.airMode then T.releaseAir()end end})
     movement:Toggle({Title="Teleportar até o alvo (desligado = voar)",Default=true,Callback=function(v)T.airTeleport=v==true;T.nextAirTeleport=0 end})
     movement:Slider({Title="Altura padrão",Min=2,Max=35,Step=1,Default=10,Callback=function(v)T.airHeight=math.clamp(tonumber(v)or 10,2,35)end})
@@ -6886,6 +7092,7 @@ do
     local state=tab:Section({Title="6 • Acompanhamento",Icon="activity"})
     T.statusLabel=state:Label({Text="Estado",Value="Entre na torre e ative (F8)"})
     T.progressLabel=state:Label({Text="Progresso",Value="Andar — | wave —"})
+    T.centerLabel=state:Label({Text="Centro / monstros observados",Value="Aguardando arena"})
     T.weaponLabel=state:Label({Text="Armas",Value="Aguardando comparação"})
     T.statsLabel=state:Label({Text="Sessão",Value="Andares concluídos: 0"})
     state:Button({Title="Liberar nova tentativa de entrada/clique/arma",Icon="refresh-cw",Callback=function()
@@ -6985,6 +7192,7 @@ do
             local phase,floor,button=tower.readUi()
             data.tower={active=tower.active,phase=phase,floor=floor or tower.floor,wave=tower.wave,waves=tower.waves,run=tower.run,
                 height=tower.airHeight,noclip=tower.airNoclip,unstick=tower.unstickActive,aura=tower.auraMode,
+                centerMode=tower.centerMode,centerHeight=tower.centerHeight and tower.centerHeight(),centerAnchor=tower.centerAnchor and R.vector(tower.centerAnchor),centerHealthLost=tower.centerMetrics and tower.centerMetrics.healthLost,
                 target=tower.target and tower.target:GetAttribute("Animal"),targetHealth=tower.target and tower.target:GetAttribute("Health"),
                 arena=tower.arena and tower.arena:GetFullName()}
             R.changed("tower-state","estado_torre",{active=tower.active,phase=phase,floor=data.tower.floor,run=tower.run,button=button and button:GetFullName(),status=tower.lastStatus})
@@ -7065,7 +7273,7 @@ do
         R.disconnect();R.events=buffer(1000);R.samples=buffer(900);R.cache={};R.counts={}
         R.started=os.clock();R.ended=nil;R.previousPosition=nil;R.previousCharacter=nil
         R.active=true;R.token+=1
-        R.add("inicio",{version="V3.25",placeId=game.PlaceId,duration=R.duration,interval=R.interval,timeLimit=R.timeLimit})
+        R.add("inicio",{version="V3.26",placeId=game.PlaceId,duration=R.duration,interval=R.interval,timeLimit=R.timeLimit})
         local rs=game:GetService("ReplicatedStorage")
         local tower=PRO.tower
         local paths={{"Tower_Engine","Remotes","Push"},{"Dungeon_Engine","Remotes","Scene"},{"HalloweenDungeon_Engine","Remotes","Scene"}}
@@ -7094,7 +7302,7 @@ do
     end
     function R.report(summary)
         local duration=R.started and ((R.ended or os.clock())-R.started) or 0
-        local lines={"NERFANGEL GRAVADOR V3.25",R.encode({placeId=game.PlaceId,active=R.active,seconds=duration,eventsRetained=R.events.size,eventsTotal=R.events.total,samplesRetained=R.samples.size,samplesTotal=R.samples.total,counts=R.counts}),
+        local lines={"NERFANGEL GRAVADOR V3.26",R.encode({placeId=game.PlaceId,active=R.active,seconds=duration,eventsRetained=R.events.size,eventsTotal=R.events.total,samplesRetained=R.samples.size,samplesTotal=R.samples.total,counts=R.counts}),
             "Posições e HP são observações do cliente. Deslocamento não prova rollback. Sem chat, vídeo ou envio automático."}
         local rows=R.rows(R.events)
         if not summary then for _,row in ipairs(R.rows(R.samples))do rows[#rows+1]=row end end
@@ -7129,6 +7337,11 @@ do
         local root=getRoot();local distance=root and before and (root.Position-before).Magnitude or 0
         if distance<=2 and result[1] then return nil end
         return {target=args[1] and args[1].Name,confirmed=result[1]==true,distance=distance,before=before and R.vector(before),after=root and R.vector(root.Position)}
+    end)
+    R.wrap("centerHold",function(args,result,before)
+        local root=getRoot();local distance=root and before and (root.Position-before).Magnitude or 0
+        if distance<=2 and result[1]then return nil end
+        return {point=R.vector(args[1]),confirmed=result[1]==true,distance=distance,after=root and R.vector(root.Position)}
     end)
     R.wrap("quickSwitchEquip",function(args,result)return {requested=args[1],equipped=result[1] and result[1].Name,reason=result[2]}end)
     R.wrap("click",function(args,result)return {phase=args[3],sent=result[1],reason=result[2]}end)
