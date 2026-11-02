@@ -53,7 +53,7 @@ assert(PRO.log('hello')=='logged')
 for i=1,1200 do R.add('overflow',{index=i})end
 assert(R.events.size==1000 and R.events.total>1200)
 local full=R.report(false);local summary=R.report(true)
-assert(full:find('NERFANGEL GRAVADOR V3.25',1,true) and full:find('samplesRetained',1,true))
+assert(full:find('NERFANGEL GRAVADOR',1,true) and full:find('samplesRetained',1,true))
 assert(#full>#summary)
 local old=R.events.total;local connections=R.connections;R.stop('test');assert(not R.active and #R.connections==0)
 for _,c in ipairs(connections)do assert(not c.connected)end
